@@ -87,6 +87,7 @@ bats::on_failure() {
     "cudaDriverVersion"
     "driverVersion"
     "productName"
+    "resource.kubernetes.io/numaNode"
     "resource.kubernetes.io/pciBusID"
     "resource.kubernetes.io/pcieRoot"
     "type"
@@ -155,4 +156,3 @@ bats::on_failure() {
   # _not_ announced anymore (we can enhance precision by comparing UUID sets, if
   # ever necessary).
 }
-

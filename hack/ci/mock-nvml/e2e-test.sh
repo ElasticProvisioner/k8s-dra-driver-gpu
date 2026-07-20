@@ -199,6 +199,12 @@ if [ "${K8S_MINOR}" -ge 35 ]; then
   FEATURE_GATES="DRAExtendedResource=true,DRAPartitionableDevices=true"
   echo "K8s >= 1.35 (${RESOLVED_K8S_VERSION}): enabling DRAExtendedResource,DRAPartitionableDevices"
 fi
+TEST_DRA_LIST_TYPE_ATTRIBUTES=false
+if [ "${K8S_MINOR}" -ge 37 ]; then
+  TEST_DRA_LIST_TYPE_ATTRIBUTES=true
+  echo "K8s >= 1.37 (${RESOLVED_K8S_VERSION}): enabling DRAListTypeAttributes"
+fi
+export TEST_DRA_LIST_TYPE_ATTRIBUTES
 
 # --- Step 4: Create Kind cluster ---
 echo ""
@@ -252,6 +258,9 @@ KINDEOF
 if [ -n "${FEATURE_GATES}" ]; then
   # Add DRA-specific feature gates to the Kind config
   sed -i '/DynamicResourceAllocation: true/a\  DRAExtendedResource: true\n  DRAPartitionableDevices: true' "${KIND_CONFIG}"
+fi
+if [ "${TEST_DRA_LIST_TYPE_ATTRIBUTES}" = "true" ]; then
+  sed -i '/DynamicResourceAllocation: true/a\  DRAListTypeAttributes: true' "${KIND_CONFIG}"
 fi
 
 # Select Kind node image if k8s version specified

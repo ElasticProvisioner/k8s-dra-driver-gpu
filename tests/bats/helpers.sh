@@ -56,6 +56,14 @@ iupgrade_wait() {
   if [ -n "${TEST_ALT_PROC_DEVICES:-}" ]; then
     _mock_args+=("--set" "altProcDevices=${TEST_ALT_PROC_DEVICES}")
   fi
+  if [ "${MOCK_NVML:-}" = "true" ]; then
+    _mock_args+=(
+      "--set" "kubeletPlugin.containers.gpus.env[0].name=NVIDIA_DRA_SYSFS_ROOT"
+      "--set" "kubeletPlugin.containers.gpus.env[0].value=/driver-root/sys")
+  fi
+  if [ "${TEST_DRA_LIST_TYPE_ATTRIBUTES:-}" = "true" ]; then
+    _mock_args+=("--set" "featureGates.DRAListTypeAttributes=true")
+  fi
 
   log "iupgrade_wait: start"
   timeout -v 120 helm upgrade --install "${TEST_HELM_RELEASE_NAME}" \

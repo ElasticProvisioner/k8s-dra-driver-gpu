@@ -132,6 +132,7 @@ bats::on_failure() {
     "cudaDriverVersion"
     "driverVersion"
     "productName"
+    "resource.kubernetes.io/numaNode"
     "resource.kubernetes.io/pciBusID"
     "resource.kubernetes.io/pcieRoot"
     "type"
@@ -142,4 +143,56 @@ bats::on_failure() {
   local attrs
   attrs=$(get_device_attrs_from_any_gpu_slice "gpu")
   assert_attrs_equal "$attrs" "${reference[@]}"
+}
+
+
+# bats test_tags=fastfeedback
+@test "MockNVML: publishes NUMA SLIT list in ResourceSlice" {
+  if [ "${MOCK_NVML:-}" != "true" ]; then
+    skip "mock NVML only"
+  fi
+  if [ "${TEST_DRA_LIST_TYPE_ATTRIBUTES:-}" != "true" ]; then
+    skip "DRAListTypeAttributes not enabled for this cluster"
+  fi
+
+  local attr
+  attr=$(kubectl get resourceslices.resource.k8s.io -o json | jq -c '
+    [
+      .items[]
+      | select(.spec.driver == "gpu.nvidia.com")
+      | .spec.devices[]?
+      | select(.attributes.type.string == "gpu")
+      | .attributes["resource.kubernetes.io/numaNode"]
+    ][0]
+  ')
+
+  assert_not_equal "$attr" "null"
+  assert_equal "$(echo "$attr" | jq -c '.ints')" "[0,1]"
+  assert_equal "$(echo "$attr" | jq -r 'has("int")')" "false"
+}
+
+
+# bats test_tags=fastfeedback
+@test "MockNVML: publishes scalar NUMA node in ResourceSlice" {
+  if [ "${MOCK_NVML:-}" != "true" ]; then
+    skip "mock NVML only"
+  fi
+  if [ "${TEST_DRA_LIST_TYPE_ATTRIBUTES:-}" = "true" ]; then
+    skip "DRAListTypeAttributes enabled; list form tested separately"
+  fi
+
+  local attr
+  attr=$(kubectl get resourceslices.resource.k8s.io -o json | jq -c '
+    [
+      .items[]
+      | select(.spec.driver == "gpu.nvidia.com")
+      | .spec.devices[]?
+      | select(.attributes.type.string == "gpu")
+      | .attributes["resource.kubernetes.io/numaNode"]
+    ][0]
+  ')
+
+  assert_not_equal "$attr" "null"
+  assert_equal "$(echo "$attr" | jq -c '.int')" "0"
+  assert_equal "$(echo "$attr" | jq -r 'has("ints")')" "false"
 }
