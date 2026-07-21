@@ -250,6 +250,10 @@ func (d *driver) HandleError(ctx context.Context, err error, msg string) {
 	runtime.HandleErrorWithContext(ctx, err, msg)
 }
 
+func (d *driver) WatchHealthStatus(context.Context, chan<- kubeletplugin.DeviceHealthReport) error {
+	return kubeletplugin.ErrHealthNotSupported
+}
+
 // nodePrepareResource() returns a 2-tuple; the first value is a boolean
 // indicating whether the work is 'done', the second value is a result which can
 // also reflect an error. Set the boolean to `true` for any result wrapping a
