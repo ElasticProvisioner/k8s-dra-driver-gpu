@@ -21,7 +21,8 @@ The [Kubernetes device plugin framework](https://kubernetes.io/docs/concepts/ext
 
 DRA is a replacement for the device plugin architecture itself, not just a different driver for the same interface. It brings hardware resource management closer to the Persistent Volume model: a workload declares what it needs in a `ResourceClaim`, and the driver fulfills it. This separation of declaration from consumption enables capabilities that are fundamentally out of scope for the device plugin framework:
 
-- Share a single GPU across multiple containers or pods (time-slicing or MPS)
+- Share a GPU allocation across containers with time-slicing or MPS
+- Share a single GPU across independent claims using Kubernetes DRA consumable capacity
 - Request GPUs by capability — memory size, compute capacity, architecture — rather than just count
 - Attach per-workload configuration (sharing strategy, MIG profile, MPS thread limits) directly to the claim
 - Allocate MIG devices dynamically without pre-configuring profiles on the node
@@ -31,7 +32,8 @@ DRA is a replacement for the device plugin architecture itself, not just a diffe
 
 ### GPU allocation
 
-Request GPUs, MIG slices, or VFIO passthrough devices in a ResourceClaim, with an optional sharing strategy such as time-slicing or MPS (Multi-Process Service).
+Request GPUs, MIG slices, or VFIO passthrough devices in a `ResourceClaim`.
+Use [consumable capacity](guides/gpu-allocation/consumable-capacity.md) to share a full GPU or MIG device across independent claims, or configure time-slicing or MPS (Multi-Process Service) for containers that share an allocation.
 Refer to [Architecture](concepts/architecture.md) for how requests are fulfilled.
 
 ### Multi-node NVLink with ComputeDomains
