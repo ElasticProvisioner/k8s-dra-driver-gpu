@@ -210,7 +210,40 @@ func (d *GpuInfo) Attributes() map[resourceapi.QualifiedName]resourceapi.DeviceA
 		}
 	}
 
+	if featuregates.Enabled(featuregates.FabricManagerPartitioning) {
+		d.addFabricManagerAttributes(attrs)
+	}
+
 	return attrs
+}
+
+// addFabricManagerAttributes publishes the Fabric Manager-derived attributes
+// (`gpuModuleID` and `partitionN`) for this physical GPU. The values are
+// resolved from NVML / FM at discovery time (see attachFabricManagerPartitions).
+func (d *GpuInfo) addFabricManagerAttributes(attrs map[resourceapi.QualifiedName]resourceapi.DeviceAttribute) {
+	if d == nil {
+		return
+	}
+
+	if d.gpuModuleID == 0 && len(d.partitionsBySize) == 0 {
+		klog.V(4).Infof("No Fabric Manager attributes for %s", d.CanonicalName())
+		return
+	}
+
+	klog.V(4).Infof("Adding Fabric Manager attributes for %s: gpuModuleID=%d partitionsBySize=%v",
+		d.CanonicalName(), d.gpuModuleID, d.partitionsBySize)
+	if d.gpuModuleID != 0 {
+		attrs["gpuModuleID"] = resourceapi.DeviceAttribute{
+			IntValue: ptr.To(int64(d.gpuModuleID)),
+		}
+	}
+
+	for size, partitionID := range d.partitionsBySize {
+		key := resourceapi.QualifiedName(fmt.Sprintf("partition%d", size))
+		attrs[key] = resourceapi.DeviceAttribute{
+			IntValue: ptr.To(int64(partitionID)),
+		}
+	}
 }
 
 func (d *GpuInfo) GetDevice() resourceapi.Device {
@@ -286,44 +319,15 @@ func (d *VfioDeviceInfo) GetDevice() resourceapi.Device {
 	}
 
 	if featuregates.Enabled(featuregates.FabricManagerPartitioning) {
-		d.addFabricManagerAttributes(device.Attributes)
+		if d.parent == nil {
+			klog.V(4).Infof("No parent GPU for %s; skipping Fabric Manager attributes", d.CanonicalName())
+		} else {
+			d.parent.addFabricManagerAttributes(device.Attributes)
+		}
 	}
 	addNumaNodeAttribute(device.Attributes, &d.numaNode)
 
 	return device
-}
-
-// addFabricManagerAttributes publishes the Fabric Manager-derived attributes.
-// The gpuModuleId / partitionN values are owned by the parent GpuInfo (the FM
-// info always tracks the physical GPU, which is why it is resolved fresh on
-// the parent whenever the GPU is (re)discovered on the nvidia driver).
-func (d *VfioDeviceInfo) addFabricManagerAttributes(attrs map[resourceapi.QualifiedName]resourceapi.DeviceAttribute) {
-	if d.parent == nil {
-		klog.V(4).Infof("No parent GPU for %s; skipping Fabric Manager attributes", d.CanonicalName())
-		return
-	}
-
-	gpuModuleID := d.parent.gpuModuleID
-	partitionsBySize := d.parent.partitionsBySize
-	if gpuModuleID == 0 && len(partitionsBySize) == 0 {
-		klog.V(4).Infof("No Fabric Manager attributes for %s", d.CanonicalName())
-		return
-	}
-
-	klog.V(4).Infof("Adding Fabric Manager attributes for %s: gpuModuleId=%d partitionsBySize=%v",
-		d.CanonicalName(), gpuModuleID, partitionsBySize)
-	if gpuModuleID != 0 {
-		attrs["gpuModuleId"] = resourceapi.DeviceAttribute{
-			IntValue: ptr.To(int64(gpuModuleID)),
-		}
-	}
-
-	for size, partitionID := range partitionsBySize {
-		key := resourceapi.QualifiedName(fmt.Sprintf("partition%d", size))
-		attrs[key] = resourceapi.DeviceAttribute{
-			IntValue: ptr.To(int64(partitionID)),
-		}
-	}
 }
 
 func addNumaNodeAttribute(attrs map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, numaNode *int) {
