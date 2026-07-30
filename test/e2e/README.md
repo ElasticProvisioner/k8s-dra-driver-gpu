@@ -1,6 +1,6 @@
 # test/e2e
 
-End-to-end suite for `dra-driver-nvidia-gpu` using Go + Ginkgo v2. Covers six
+End-to-end suite for `dra-driver-nvidia-gpu` using Go + Ginkgo v2. Covers eight
 DRA allocation scenarios driven by CEL selectors and embedded YAML templates.
 
 ## Coverage
@@ -13,6 +13,8 @@ DRA allocation scenarios driven by CEL selectors and embedded YAML templates.
 | 4 | `[cel/memory]` | CEL quantity compare on `capacity.memory` at a 90% threshold. |
 | 5 | `[sharing]` | N pods share a single `ResourceClaim` (time-slicing outcome). |
 | 6 | `[negative]` | Unmatchable selector leaves the pod Pending with no allocation. |
+| 7 | `[consumable-shares/unlimited]` | Multiple pods share the same GPU concurrently with `--consumable-shares=unlimited`. |
+| 8 | `[consumable-shares/memory]` | Multiple pods with explicit fractional memory requests share the same GPU with `--consumable-shares=memory`. |
 
 The suite detects GPU product / driver / memory from the published
 `ResourceSlice` at `BeforeSuite`, so it adapts to whatever hardware the CI
@@ -43,16 +45,18 @@ picks up automatically when `runner.sh` sets `ARTIFACTS`.
 test/e2e/
 ├── README.md
 ├── suite_test.go              # Ginkgo bootstrap + GPU detection
-├── gpu_allocation_test.go     # 6 It() specs
+├── gpu_allocation_test.go     # 8 It() specs
 └── framework/
     ├── client.go              # k8s client factory
     ├── gpu.go                 # ResourceSlice -> GPUDetails
     ├── manifests.go           # embed + render specs/*.tmpl
     ├── wait.go                # pod/claim polling helpers
     └── specs/                 # embedded YAML templates
-        ├── product-type.yaml.tmpl
+        ├── consumable-shares-memory.yaml.tmpl
+        ├── consumable-shares-unlimited.yaml.tmpl
         ├── driver-version.yaml.tmpl
+        ├── error-handling.yaml.tmpl
         ├── memory-size.yaml.tmpl
-        ├── timeslicing.yaml.tmpl
-        └── error-handling.yaml.tmpl
+        ├── product-type.yaml.tmpl
+        └── timeslicing.yaml.tmpl
 ```

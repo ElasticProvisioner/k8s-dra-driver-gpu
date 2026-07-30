@@ -38,6 +38,8 @@ fullnameOverride: ""
 namespaceOverride: ""
 selectorLabelsOverride: {}
 gpuResourcesEnabledOverride: false
+# Configure consumable shares support ("disabled", "memory", "unlimited", or a positive integer)
+consumableShares: ""
 
 allowDefaultNamespace: false
 
@@ -115,6 +117,7 @@ resources:
 #   NVMLDeviceHealthCheck: false       # GPU Health Checking using NVML
 #   HostManagedIMEXDaemon: false       # Gate allowing resources.computeDomains.imex.mode=hostManaged
 #   DRAListTypeAttributes: false       # Publish list-valued DRA device attributes
+#   ConsumableShares: false            # Publish consumable capacity and multi-allocation support for devices
 featureGates: {}
 
 # Log verbosity for all components. Zero or greater, higher number means higher
