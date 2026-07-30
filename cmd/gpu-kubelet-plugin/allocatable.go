@@ -166,6 +166,26 @@ func (d AllocatableDevices) GetGPUs() []*AllocatableDevice {
 	return devices
 }
 
+func (d AllocatableDevices) GetMigStaticDevices() []*AllocatableDevice {
+	var devices []*AllocatableDevice
+	for _, device := range d {
+		if device.Type() == MigStaticDeviceType {
+			devices = append(devices, device)
+		}
+	}
+	return devices
+}
+
+func (d AllocatableDevices) GetMigDynamicDevices() []*AllocatableDevice {
+	var devices []*AllocatableDevice
+	for _, device := range d {
+		if device.Type() == MigDynamicDeviceType {
+			devices = append(devices, device)
+		}
+	}
+	return devices
+}
+
 func (d AllocatableDevices) GetVfioDevices() []*AllocatableDevice {
 	var devices []*AllocatableDevice
 	for _, device := range d {
