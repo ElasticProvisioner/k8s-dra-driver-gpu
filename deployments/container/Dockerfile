@@ -29,6 +29,9 @@ ARG GOLANG_VERSION=x.x.x
 ARG GOCACHE
 ARG GOMODCACHE
 
+ARG GOPROXY="https://proxy.golang.org,direct"
+ENV GOPROXY=$GOPROXY
+
 # BUILDARCH, TARGETARCH (and others) are defined in the global scope by
 # BuiltKit. BUILDARCH is the architecture of the build platform. TARGETARCH is
 # set via the --platform arg provided to the `docker buildx build ...` command.

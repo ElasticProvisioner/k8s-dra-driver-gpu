@@ -85,6 +85,8 @@ ifeq ($(CI), true)
 	GOMODCACHE=/go/pkg/mod
 endif
 
+GOPROXY ?= https://proxy.golang.org,direct
+
 build:
 	mkdir -p $(DIST_DIR)
 	DOCKER_BUILDKIT=1 \
@@ -98,6 +100,7 @@ build:
 		--build-arg GIT_COMMIT="$(GIT_COMMIT)" \
 		--build-arg GOCACHE="$(GOCACHE)" \
 		--build-arg GOMODCACHE="$(GOMODCACHE)" \
+		--build-arg GOPROXY="$(GOPROXY)" \
 		--progress=plain \
 		-f $(DOCKERFILE) \
 		$(CURDIR)
