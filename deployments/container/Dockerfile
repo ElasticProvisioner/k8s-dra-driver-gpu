@@ -32,6 +32,10 @@ ARG GOMODCACHE
 ARG GOPROXY="https://proxy.golang.org,direct"
 ENV GOPROXY=$GOPROXY
 
+# Go module mode for builds: "vendor" (offline, default) or "mod" (download via GOPROXY).
+# Override at build time: --build-arg GO_MOD=mod when using deployments/container/Makefile
+ARG GO_MOD=vendor
+
 # BUILDARCH, TARGETARCH (and others) are defined in the global scope by
 # BuiltKit. BUILDARCH is the architecture of the build platform. TARGETARCH is
 # set via the --platform arg provided to the `docker buildx build ...` command.
@@ -66,7 +70,7 @@ COPY --parents pkg api internal vendor ./
 RUN --mount=type=cache,target=/mc/go/build-cache,id=gocache \
     --mount=type=cache,target=/mc/go/pkg/mod,id=gomodcache \
     case "$TARGETARCH" in "$BUILDARCH") cc=gcc;; arm64) cc=aarch64-linux-gnu-gcc;; amd64) cc=x86_64-linux-gnu-gcc;; esac && \
-    CC=${cc} CGO_ENABLED=1 GOARCH=${TARGETARCH} time go build -mod=vendor ./...
+    CC=${cc} CGO_ENABLED=1 GOARCH=${TARGETARCH} time go build -mod=${GO_MOD} ./...
 
 # Copy everything else (and only) what is required for the Go build ('Explicit
 # include' philosophy). Goal: invalidate layer only when absolutely required.
@@ -87,7 +91,7 @@ RUN mkdir /artifacts
 RUN --mount=type=cache,target=/mc/go/build-cache,id=gocache \
     --mount=type=cache,target=/mc/go/pkg/mod,id=gomodcache \
     case "$TARGETARCH" in "$BUILDARCH") cc=gcc;; arm64) cc=aarch64-linux-gnu-gcc;; amd64) cc=x86_64-linux-gnu-gcc;; esac && \
-    time make CC=${cc} GOARCH=${TARGETARCH} PREFIX=/artifacts cmds
+    time make CC=${cc} GOARCH=${TARGETARCH} GO_MOD=${GO_MOD} PREFIX=/artifacts cmds
 
 # Static bash binary, sourced from the Debian 'bash-static' package on
 # trixie. Replaces a from-source build that was flaky in CI (autoconf

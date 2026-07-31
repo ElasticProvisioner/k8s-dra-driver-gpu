@@ -86,6 +86,8 @@ ifeq ($(CI), true)
 endif
 
 GOPROXY ?= https://proxy.golang.org,direct
+# Go module mode passed to the Dockerfile as -mod=<value>. vendor (default) or mod.
+GO_MOD ?= vendor
 
 build:
 	mkdir -p $(DIST_DIR)
@@ -101,6 +103,7 @@ build:
 		--build-arg GOCACHE="$(GOCACHE)" \
 		--build-arg GOMODCACHE="$(GOMODCACHE)" \
 		--build-arg GOPROXY="$(GOPROXY)" \
+		--build-arg GO_MOD="$(GO_MOD)" \
 		--progress=plain \
 		-f $(DOCKERFILE) \
 		$(CURDIR)
