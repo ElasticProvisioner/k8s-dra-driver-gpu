@@ -33,6 +33,7 @@ import (
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 
 	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/common"
+	fm "sigs.k8s.io/dra-driver-nvidia-gpu/pkg/fabricmanager"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/featuregates"
 )
 
@@ -44,12 +45,13 @@ const (
 
 type deviceLib struct {
 	nvdev.Interface
-	nvmllib               nvml.Interface
-	driverLibraryPath     string
-	devRoot               string
-	nvidiaSMIPath         string
-	maxImexChannelCount   int
-	nvCapImexChanDevInfos []*common.NVcapDeviceInfo
+	nvmllib                  nvml.Interface
+	driverLibraryPath        string
+	devRoot                  string
+	nvidiaSMIPath            string
+	maxImexChannelCount      int
+	nvCapImexChanDevInfos    []*common.NVcapDeviceInfo
+	isSingleNodeNVLinkSystem bool
 }
 
 func newDeviceLib(driverRoot root) (*deviceLib, error) {
@@ -102,6 +104,13 @@ func newDeviceLib(driverRoot root) (*deviceLib, error) {
 		}
 	}
 
+	if featuregates.Enabled(featuregates.FabricManagerPartitioning) {
+		isSingleNodeNVLinkSystem, err := d.checkIsSingleNodeNVLinkSystem()
+		if err != nil {
+			return nil, fmt.Errorf("error checking if node is single-node NVLink system: %w", err)
+		}
+		d.isSingleNodeNVLinkSystem = isSingleNodeNVLinkSystem
+	}
 	return &d, nil
 }
 
@@ -308,6 +317,14 @@ func (l deviceLib) getCliqueIDStrict() (string, error) {
 
 		// NVLink fabric is supported - check if registration completed
 		if info.State != nvml.GPU_FABRIC_STATE_COMPLETED {
+			// Ignore pending NVLink registration on single-node NVLink systems.
+			// In FabricManager multi-tenancy mode, the GPUs may not be registered until a
+			// partition they belong to is activated. We are blanket ignoring this state as
+			// we can't yet differentiate between real NVLink failures and this scenario.
+			if featuregates.Enabled(featuregates.FabricManagerPartitioning) && l.isSingleNodeNVLinkSystem {
+				klog.Infof("no-clique fallback: ignoring incomplete NVLink registration (device=%d/%s, state=%d) on single-node NVLink system", i, duid, info.State)
+				return nil
+			}
 			return fmt.Errorf("NVLink fabric not attached (device %d/%s): state=%d, refusing to start", i, duid, info.State)
 		}
 
@@ -459,4 +476,19 @@ func (l deviceLib) unmountRecursively(root string) error {
 	}
 
 	return helper(root)
+}
+
+// isSingleNodeNVLinkSystem returns true if the node is a single-node NVLink
+// system with one or more NVSwitch (or newer NVLink5 switch) devices.
+func (l deviceLib) checkIsSingleNodeNVLinkSystem() (bool, error) {
+	hasLocalFabric, err := fm.HasFabricManagerFabric(l.devRoot)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if node has local fabric: %w", err)
+	}
+
+	if !hasLocalFabric {
+		return false, nil
+	}
+
+	return true, nil
 }
