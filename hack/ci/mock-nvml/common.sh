@@ -39,7 +39,7 @@ mock_nvml_expected_name() {
     a100)  echo "NVIDIA A100-SXM4-40GB" ;;
     h100)  echo "NVIDIA H100 80GB HBM3" ;;
     b200)  echo "NVIDIA B200" ;;
-    gb200) echo "NVIDIA GB200 NVL" ;;
+    gb200) echo "NVIDIA GB200" ;;
     l40s)  echo "NVIDIA L40S" ;;
     t4)    echo "NVIDIA T4" ;;
     *)     echo "UNKNOWN" ;;
