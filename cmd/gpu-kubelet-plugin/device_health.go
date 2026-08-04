@@ -26,6 +26,8 @@ import (
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/klog/v2"
+
+	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/featuregates"
 )
 
 const (
@@ -262,7 +264,7 @@ func (m *nvmlDeviceHealthMonitor) run(ctx context.Context) {
 				m.sendHealthEventForAllDevices(HealthEventGPULost)
 				continue
 			}
-			affectedDevice, err := m.resolveDeviceForEvent(eventUUID, gi, ci)
+			affectedDevice, err := m.resolveDeviceByEventAddress(eventUUID, event.Device, gi, ci)
 			// An error indicates inconsistent UUID/PCI inventory. A nil device
 			// without an error means the event's GI/CI is not available.
 			if err != nil {
@@ -274,7 +276,7 @@ func (m *nvmlDeviceHealthMonitor) run(ctx context.Context) {
 				continue
 			}
 
-			klog.V(4).Infof("Sending XID=%d health event for device %s", xid, affectedDevice.UUID())
+			klog.V(4).Infof("Sending XID=%d health event for device %s", xid, affectedDevice.CanonicalName())
 			m.unhealthy <- &DeviceHealthEvent{
 				Devices:   []*AllocatableDevice{affectedDevice},
 				EventType: HealthEventXID,
@@ -292,57 +294,92 @@ func (m *nvmlDeviceHealthMonitor) Unhealthy() <-chan *DeviceHealthEvent {
 // single batched DeviceHealthEvent so the consumer makes one ResourceSlice
 // update.
 func (m *nvmlDeviceHealthMonitor) sendHealthEventForAllDevices(eventType DeviceHealthEventType) {
-	m.sendBatchedHealthEvent(deviceList(m.perGPUAllocatable.GetAllDevices()), eventType)
+	m.sendBatchedHealthEvent(m.perGPUAllocatable.GetAllDevices().List(), eventType)
 }
 
 // sendHealthEventForDevices aggregates all devices under a single parent GPU
 // into one batched DeviceHealthEvent.
 func (m *nvmlDeviceHealthMonitor) sendHealthEventForDevices(devices AllocatableDevices, eventType DeviceHealthEventType) {
-	m.sendBatchedHealthEvent(deviceList(devices), eventType)
+	m.sendBatchedHealthEvent(devices.List(), eventType)
 }
 
-func (m *nvmlDeviceHealthMonitor) resolveDeviceForEvent(parentUUID string, gi, ci uint32) (*AllocatableDevice, error) {
+// NVML identifies a MIG-scoped event by the tuple (parent UUID, GPU instance
+// ID, compute instance ID). A full-GPU event reports FullGPUInstanceID for both
+// the GPU instance ID and compute instance ID.
+//
+// resolveDeviceByEventAddress maps this address, extracted from an NVML event,
+// to an advertised allocatable device.
+func (m *nvmlDeviceHealthMonitor) resolveDeviceByEventAddress(parentUUID string, eventDevice nvml.Device, gi, ci uint32) (*AllocatableDevice, error) {
 	parent, ok := m.gpuInfosByUUID[parentUUID]
 	if !ok {
-		return nil, fmt.Errorf("parent GPU UUID %s is not in the discovered GPU inventory", parentUUID)
+		return nil, fmt.Errorf("failed to find parent GPU UUID %s in the discovered GPU inventory", parentUUID)
 	}
-	return resolveEventDeviceByPCIBusID(m.perGPUAllocatable, parentUUID, parent.pciBusID, gi, ci)
+
+	devices, ok := m.perGPUAllocatable.allocatablesMap[parent.pciBusID]
+	if !ok {
+		return nil, fmt.Errorf("failed to find PCI Bus ID %s for parent GPU UUID %s in the allocatable inventory", parent.pciBusID, parent.UUID)
+	}
+
+	switch {
+	case gi == FullGPUInstanceID && ci == FullGPUInstanceID:
+		return devices.GetGPUDeviceByUUID(parentUUID), nil
+
+	case gi != FullGPUInstanceID && ci != FullGPUInstanceID:
+		if featuregates.Enabled(featuregates.DynamicMIG) {
+			spec, err := resolveMigEvent(eventDevice, parent, gi, ci)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve Dynamic MIG device for parent %s, GI=%d, CI=%d: %w", parentUUID, gi, ci, err)
+			}
+			return devices.GetMigDynamicDeviceByTuple(spec), nil
+		}
+
+		return devices.GetMigStaticDeviceByLiveTuple(&MigLiveTuple{
+			ParentUUID: parentUUID,
+			GIID:       int(gi),
+			CIID:       int(ci),
+		}), nil
+
+	default:
+		// A GI can exist without a CI, but it does not represent a usable,
+		// allocatable MIG device. Similar to device plugin, treat an event
+		// as MIG-scoped only when both GI and CI are present.
+		//
+		// See:
+		// https://github.com/NVIDIA/k8s-device-plugin/blob/main/internal/rm/health.go#L160
+		// https://docs.nvidia.com/deploy/nvml-api/structnvmlEventData__t.html
+		// https://docs.nvidia.com/datacenter/tesla/mig-user-guide/latest/getting-started-with-mig.html#creating-gpu-instances
+		klog.V(6).Infof("Ignoring NVML event with inconsistent instance address for parent UUID %s: GI=%d, CI=%d", parentUUID, gi, ci)
+		return nil, nil
+	}
 }
 
-func resolveEventDeviceByPCIBusID(perGPU *PerGPUAllocatableDevices, parentUUID, pciBusID string, gi, ci uint32) (*AllocatableDevice, error) {
-	devices, ok := perGPU.allocatablesMap[pciBusID]
-	if !ok {
-		return nil, fmt.Errorf(
-			"PCI Bus ID %s for parent GPU UUID %s is not in the allocatable inventory",
-			pciBusID, parentUUID,
-		)
+// resolveMigEvent translates the live GI/CI address reported by NVML into the
+// abstract profile and placement used to advertise a Dynamic MIG device.
+func resolveMigEvent(device nvml.Device, parent *GpuInfo, giID, ciID uint32) (*MigSpecTuple, error) {
+	gi, ret := device.GetGpuInstanceById(int(giID))
+	if ret != nvml.SUCCESS {
+		return nil, fmt.Errorf("failed to get GPU instance %d: %w", giID, ret)
+	}
+	giInfo, ret := gi.GetInfo()
+	if ret != nvml.SUCCESS {
+		return nil, fmt.Errorf("failed to get info for GPU instance %d: %w", giID, ret)
 	}
 
-	for _, dev := range devices {
-		switch dev.Type() {
-		case GpuDeviceType:
-			if dev.Gpu.UUID == parentUUID &&
-				gi == FullGPUInstanceID &&
-				ci == FullGPUInstanceID {
-				return dev, nil
-			}
-
-		case MigStaticDeviceType:
-			if dev.MigStatic.parent.UUID == parentUUID &&
-				uint32(dev.MigStatic.gIInfo.Id) == gi &&
-				uint32(dev.MigStatic.cIInfo.Id) == ci {
-				return dev, nil
-			}
-
-		default:
-			klog.V(6).Infof(
-				"Skipping unsupported device type %s while resolving event for UUID:%s, GI:%d, CI:%d",
-				dev.Type(), parentUUID, gi, ci,
-			)
-		}
+	_, ret = gi.GetComputeInstanceById(int(ciID))
+	if ret != nvml.SUCCESS {
+		return nil, fmt.Errorf("failed to get compute instance %d in GPU instance %d: %w", ciID, giID, ret)
 	}
 
-	return nil, nil
+	klog.V(6).Infof(
+		"Resolved Dynamic MIG event (UUID:%s, GI:%d, CI:%d) to profile ID %d, placement start %d",
+		parent.UUID, giID, ciID, giInfo.ProfileId, giInfo.Placement.Start,
+	)
+	return &MigSpecTuple{
+		ParentMinor:    parent.minor,
+		ParentPCIBusID: parent.pciBusID,
+		ProfileID:      int(giInfo.ProfileId),
+		PlacementStart: int(giInfo.Placement.Start),
+	}, nil
 }
 
 // sendBatchedHealthEvent sends a single DeviceHealthEvent containing all
@@ -362,14 +399,6 @@ func (m *nvmlDeviceHealthMonitor) sendBatchedHealthEvent(devices []*AllocatableD
 	default:
 		klog.Errorf("Health event channel full; dropping batched %s event for %d device(s)", eventType, len(devices))
 	}
-}
-
-func deviceList(devices AllocatableDevices) []*AllocatableDevice {
-	values := make([]*AllocatableDevice, 0, len(devices))
-	for _, dev := range devices {
-		values = append(values, dev)
-	}
-	return values
 }
 
 // getAdditionalXids returns a list of additional Xids to skip from the specified string.

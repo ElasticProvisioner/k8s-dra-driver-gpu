@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	nvdev "github.com/NVIDIA/go-nvlib/pkg/nvlib/device"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	resourceapi "k8s.io/api/resource/v1"
 
@@ -143,6 +144,32 @@ func TestAddOrUpdateTaint_TimeAddedResetOnChange(t *testing.T) {
 	})
 
 	assert.Nil(t, dev.Taints()[0].TimeAdded, "TimeAdded should be nil so the API server sets a fresh timestamp")
+}
+
+func TestPartGetDeviceIncludesHealthTaints(t *testing.T) {
+	parent := &GpuInfo{
+		UUID:                  "GPU-parent-1",
+		minor:                 0,
+		cudaComputeCapability: "9.0",
+		driverVersion:         "580.0",
+		cudaDriverVersion:     "13.0",
+	}
+	dev := &AllocatableDevice{MigDynamic: &MigSpec{
+		Parent:        parent,
+		Profile:       &nvdev.MigProfileInfo{G: 1, GB: 5, GIProfileID: 19},
+		GIProfileInfo: nvml.GpuInstanceProfileInfo{Id: 19},
+		Placement:     nvml.GpuInstancePlacement{Start: 0, Size: 1},
+	}}
+	taint := &resourceapi.DeviceTaint{
+		Key:    TaintKeyXID,
+		Value:  "43",
+		Effect: resourceapi.DeviceTaintEffectNone,
+	}
+	require.True(t, dev.AddOrUpdateTaint(taint))
+
+	got := dev.PartGetDevice(nil)
+	require.Len(t, got.Taints, 1)
+	assert.Equal(t, *taint, got.Taints[0])
 }
 
 func TestHealthEventToTaint(t *testing.T) {
@@ -286,53 +313,76 @@ func TestIsEventNonFatal(t *testing.T) {
 	}
 }
 
-func TestResolveEventDeviceByPCIBusID(t *testing.T) {
+func TestAllocatableDevicesFindByAddress(t *testing.T) {
 	parent := &GpuInfo{UUID: "GPU-parent-1", minor: 0, pciBusID: "0000:01:00.0"}
 	fullGPU := &AllocatableDevice{Gpu: parent}
 	staticMIG := &AllocatableDevice{
 		MigStatic: &MigDeviceInfo{
-			parent: parent,
-			gIInfo: &nvml.GpuInstanceInfo{Id: 2},
-			cIInfo: &nvml.ComputeInstanceInfo{Id: 3},
-		},
+			ParentUUID: parent.UUID,
+			GIID:       2,
+			CIID:       3,
+			parent:     parent},
 	}
-	perGPU := &PerGPUAllocatableDevices{
-		allocatablesMap: map[PCIBusID]AllocatableDevices{
-			parent.pciBusID: {
-				"gpu":     fullGPU,
-				"static":  staticMIG,
-				"unknown": {},
-			},
-		},
+	devices := AllocatableDevices{
+		"gpu":    fullGPU,
+		"static": staticMIG,
 	}
+
+	assert.Equal(t, fullGPU, devices.GetGPUDeviceByUUID(parent.UUID))
+	assert.Nil(t, devices.GetGPUDeviceByUUID("GPU-unknown"))
+	assert.Equal(t, staticMIG, devices.GetMigStaticDeviceByLiveTuple(&MigLiveTuple{
+		ParentUUID: parent.UUID,
+		GIID:       2,
+		CIID:       3,
+	}))
+	assert.Nil(t, devices.GetMigStaticDeviceByLiveTuple(&MigLiveTuple{
+		ParentUUID: parent.UUID,
+		GIID:       2,
+		CIID:       4,
+	}))
+	assert.Nil(t, devices.GetMigStaticDeviceByLiveTuple(&MigLiveTuple{
+		ParentUUID: "GPU-unknown",
+		GIID:       2,
+		CIID:       3,
+	}))
+	assert.Nil(t, devices.GetMigStaticDeviceByLiveTuple(nil))
+}
+
+func TestAllocatableDevicesFindDynamicMIGBySpec(t *testing.T) {
+	parent := &GpuInfo{UUID: "GPU-parent-1", minor: 0, pciBusID: "0000:01:00.0"}
+	dynamicMIG := &AllocatableDevice{MigDynamic: &MigSpec{
+		Parent:        parent,
+		GIProfileInfo: nvml.GpuInstanceProfileInfo{Id: 19},
+		Placement:     nvml.GpuInstancePlacement{Start: 0},
+	}}
+	devices := AllocatableDevices{"dynamic": dynamicMIG}
 
 	tests := []struct {
 		name string
-		gi   uint32
-		ci   uint32
+		spec *MigSpecTuple
 		want *AllocatableDevice
 	}{
-		{name: "full GPU", gi: FullGPUInstanceID, ci: FullGPUInstanceID, want: fullGPU},
-		{name: "static MIG", gi: 2, ci: 3, want: staticMIG},
-		{name: "unknown placement", gi: 7, ci: 0, want: nil},
+		{name: "exact match", spec: &MigSpecTuple{ParentPCIBusID: parent.pciBusID, ProfileID: 19, PlacementStart: 0}, want: dynamicMIG},
+		{name: "profile mismatch", spec: &MigSpecTuple{ParentPCIBusID: parent.pciBusID, ProfileID: 14, PlacementStart: 0}},
+		{name: "placement mismatch", spec: &MigSpecTuple{ParentPCIBusID: parent.pciBusID, ProfileID: 19, PlacementStart: 1}},
+		{name: "parent mismatch", spec: &MigSpecTuple{ParentPCIBusID: "0000:02:00.0", ProfileID: 19, PlacementStart: 0}},
+		{name: "nil spec"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveEventDeviceByPCIBusID(perGPU, parent.UUID, parent.pciBusID, tc.gi, tc.ci)
-			require.NoError(t, err)
-			require.Equal(t, tc.want, got)
+			assert.Equal(t, tc.want, devices.GetMigDynamicDeviceByTuple(tc.spec))
 		})
 	}
 }
 
-func TestResolveDeviceForEventUsesGPUUUIDIndex(t *testing.T) {
+func TestResolveDeviceByEventAddressUsesGPUUUIDIndex(t *testing.T) {
 	parent := &GpuInfo{UUID: "GPU-parent-1", minor: 0, pciBusID: "0000:01:00.0"}
 	staticMIG := &AllocatableDevice{
 		MigStatic: &MigDeviceInfo{
-			parent: parent,
-			gIInfo: &nvml.GpuInstanceInfo{Id: 2},
-			cIInfo: &nvml.ComputeInstanceInfo{Id: 3},
-		},
+			ParentUUID: parent.UUID,
+			GIID:       2,
+			CIID:       3,
+			parent:     parent},
 	}
 	monitor := &nvmlDeviceHealthMonitor{
 		perGPUAllocatable: &PerGPUAllocatableDevices{
@@ -344,15 +394,21 @@ func TestResolveDeviceForEventUsesGPUUUIDIndex(t *testing.T) {
 		},
 		gpuInfosByUUID: map[string]*GpuInfo{parent.UUID: parent},
 	}
-	got, err := monitor.resolveDeviceForEvent(parent.UUID, 2, 3)
+
+	got, err := monitor.resolveDeviceByEventAddress(parent.UUID, nil, 2, 3)
 	require.NoError(t, err)
 	require.Equal(t, staticMIG, got)
 
-	_, err = monitor.resolveDeviceForEvent("GPU-unknown", 2, 3)
-	require.ErrorContains(t, err, "not in the discovered GPU inventory")
+	got, err = monitor.resolveDeviceByEventAddress(parent.UUID, nil, FullGPUInstanceID, 3)
+	require.Nil(t, got)
+	require.NoError(t, err)
+
+	_, err = monitor.resolveDeviceByEventAddress("GPU-unknown", nil, 2, 3)
+	require.ErrorContains(t, err, "failed to find parent GPU UUID")
+
 }
 
-func TestResolveEventDeviceByPCIBusIDRejectsWrongParent(t *testing.T) {
+func TestAllocatableDevicesFindRejectsWrongParent(t *testing.T) {
 	parent := &GpuInfo{
 		UUID:     "GPU-parent-1",
 		pciBusID: "0000:01:00.0",
@@ -362,45 +418,85 @@ func TestResolveEventDeviceByPCIBusIDRejectsWrongParent(t *testing.T) {
 		pciBusID: parent.pciBusID,
 	}
 
-	perGPU := &PerGPUAllocatableDevices{
-		allocatablesMap: map[PCIBusID]AllocatableDevices{
-			parent.pciBusID: {
-				"wrong-gpu": {
-					Gpu: otherParent,
-				},
-				"wrong-static-mig": {
-					MigStatic: &MigDeviceInfo{
-						parent: otherParent,
-						gIInfo: &nvml.GpuInstanceInfo{Id: 2},
-						cIInfo: &nvml.ComputeInstanceInfo{Id: 3},
-					},
-				},
+	devices := AllocatableDevices{
+		"wrong-gpu": {
+			Gpu: otherParent,
+		},
+		"wrong-static-mig": {
+			MigStatic: &MigDeviceInfo{
+				ParentUUID: otherParent.UUID,
+				GIID:       2,
+				CIID:       3,
+				parent:     otherParent,
 			},
 		},
 	}
-
-	got, err := resolveEventDeviceByPCIBusID(
-		perGPU,
-		parent.UUID,
-		parent.pciBusID,
-		FullGPUInstanceID,
-		FullGPUInstanceID,
-	)
-	require.NoError(t, err)
-	require.Nil(t, got)
-
-	got, err = resolveEventDeviceByPCIBusID(
-		perGPU,
-		parent.UUID,
-		parent.pciBusID,
-		2,
-		3,
-	)
-	require.NoError(t, err)
-	require.Nil(t, got)
+	require.Nil(t, devices.GetGPUDeviceByUUID(parent.UUID))
+	require.Nil(t, devices.GetMigStaticDeviceByLiveTuple(&MigLiveTuple{
+		ParentUUID: parent.UUID,
+		GIID:       2,
+		CIID:       3,
+	}))
 }
 
 func TestHealthMonitorStartRequiresRegisteredEvents(t *testing.T) {
 	m := &nvmlDeviceHealthMonitor{}
 	require.ErrorContains(t, m.Start(context.Background()), "events have not been registered")
+}
+
+func TestGetDeviceIncludesHealthTaints(t *testing.T) {
+	dev := &AllocatableDevice{Gpu: &GpuInfo{
+		UUID:                  "GPU-1",
+		minor:                 0,
+		cudaComputeCapability: "9.0",
+		driverVersion:         "580.0",
+		cudaDriverVersion:     "13.0",
+	}}
+	taint := &resourceapi.DeviceTaint{
+		Key:    TaintKeyXID,
+		Value:  "43",
+		Effect: resourceapi.DeviceTaintEffectNone,
+	}
+	require.True(t, dev.AddOrUpdateTaint(taint))
+
+	got := dev.GetDevice(nil)
+
+	require.Len(t, got.Taints, 1)
+	assert.Equal(t, *taint, got.Taints[0])
+}
+func TestClearDynamicMIGXIDTaint(t *testing.T) {
+	dynamic := &AllocatableDevice{MigDynamic: &MigSpec{}}
+	dynamic.AddOrUpdateTaint(&resourceapi.DeviceTaint{
+		Key:   TaintKeyXID,
+		Value: "43",
+	})
+	dynamic.AddOrUpdateTaint(&resourceapi.DeviceTaint{
+		Key: TaintKeyGPULost,
+	})
+
+	static := &AllocatableDevice{MigStatic: &MigDeviceInfo{}}
+	static.AddOrUpdateTaint(&resourceapi.DeviceTaint{
+		Key:   TaintKeyXID,
+		Value: "43",
+	})
+
+	state := &DeviceState{
+		perGPUAllocatable: &PerGPUAllocatableDevices{
+			allocatablesMap: map[PCIBusID]AllocatableDevices{
+				"0000:01:00.0": {
+					"dynamic": dynamic,
+					"static":  static,
+				},
+			},
+		},
+	}
+
+	state.clearDynamicMIGXIDTaint("dynamic")
+	state.clearDynamicMIGXIDTaint("static")
+
+	require.Len(t, dynamic.Taints(), 1)
+	assert.Equal(t, TaintKeyGPULost, dynamic.Taints()[0].Key)
+
+	require.Len(t, static.Taints(), 1)
+	assert.Equal(t, TaintKeyXID, static.Taints()[0].Key)
 }
