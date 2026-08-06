@@ -44,6 +44,10 @@ const (
 	nvidiaPersistencedSocketPath = "/run/nvidia-persistenced/socket"
 	gpuFreeCheckInterval         = 1 * time.Second
 	gpuFreeCheckTimeout          = 60 * time.Second
+	// Keep driverChangeTimeout short to avoid blocking the plugin process
+	// for too long from serving other device preparation/unpreparation
+	// requests.
+	driverChangeTimeout = 15 * time.Second
 )
 
 type VfioPciManager struct {
@@ -139,7 +143,14 @@ func (vm *VfioPciManager) Configure(ctx context.Context, info *VfioDeviceInfo) e
 	}
 
 	// Change the GPU driver to vfio-pci (or variant).
-	err = vm.changeDriver(info.PciBusID, vfioDriver)
+	// Run the driver change operation in a separate goroutine because the
+	// underlying kernel operation may get stuck and cannot be cancelled. The
+	// driver change holds the inflight marker until it completes so that a
+	// subsequent Configure/Unconfigure call will not attempt to change the
+	// driver again.
+	err = vm.tryChangeDriverWithTimeout(ctx, driverChangeTimeout, func() error {
+		return vm.changeDriver(info.PciBusID, vfioDriver)
+	})
 	if err != nil {
 		return fmt.Errorf("error changing driver for GPU %q: %w", info.PciBusID, err)
 	}
@@ -256,6 +267,36 @@ func getDriver(pciDevicesPath, pciAddress string) (string, error) {
 	return driver, nil
 }
 
+// Run the driver change operation in a separate goroutine and wait for it to complete.
+//
+// If the driver change times out, its possible that it may be stuck in the kernel
+// and become uncancelable due to another process holding an open handle to the
+// GPU device minor file. Another consequence of this is that the plugin
+// process may not be able to terminate due to the stuck kernel task. This would
+// require either the GPU handle to be released by the culprit process or a node
+// reboot to recover. This is executed with a fixed timeout to avoid holding the
+// `pu.lock` when running in the context of the goroutine serving the
+// NodePrepare/NodeUnprepare API call.
+func (vm *VfioPciManager) tryChangeDriverWithTimeout(ctx context.Context, timeout time.Duration, changeDriverFn func() error) error {
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Create a buffered channel to avoid blocking the goroutine
+	// if this function times out and exits.
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(errCh)
+		errCh <- changeDriverFn()
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-timeoutCtx.Done():
+		return timeoutCtx.Err()
+	}
+}
+
 // Change the driver the GPU is bound to.
 //
 // Here, we keep track of inflight driver switches so that we don't attempt to
@@ -266,9 +307,11 @@ func getDriver(pciDevicesPath, pciAddress string) (string, error) {
 // terminate the plugin process. Once the goroutine is freed up, we're safe to
 // reattempt the driver switch.
 func (vm *VfioPciManager) changeDriver(pciAddress, driver string) error {
-	if vm.isDriverSwitchInflight(pciAddress) {
-		return fmt.Errorf("an existing driver switch for GPU %q is inflight, please check the kernel logs for more details", pciAddress)
+	err := vm.markDriverSwitchInflight(pciAddress)
+	if err != nil {
+		return err
 	}
+	defer vm.unmarkDriverSwitchInflight(pciAddress)
 
 	currentDriver, err := getDriver(pciDevicesPath, pciAddress)
 	if err != nil {
@@ -279,10 +322,6 @@ func (vm *VfioPciManager) changeDriver(pciAddress, driver string) error {
 	if currentDriver == driver {
 		return nil
 	}
-
-	// Mark the driver switch as inflight.
-	vm.markDriverSwitchInflight(pciAddress)
-	defer vm.unmarkDriverSwitchInflight(pciAddress)
 
 	if currentDriver != "" {
 		err := vm.nvlib.nvpasst.Unbind(pciAddress)
@@ -310,7 +349,7 @@ func (vm *VfioPciManager) isDriverSwitchInflight(pciAddress string) bool {
 func (vm *VfioPciManager) markDriverSwitchInflight(pciAddress string) error {
 	vm.Lock()
 	defer vm.Unlock()
-	if _, ok := vm.inflightDriverSwitches[pciAddress]; ok {
+	if _, exists := vm.inflightDriverSwitches[pciAddress]; exists {
 		return fmt.Errorf("an existing driver switch for GPU %q is inflight, please check the kernel logs for more details", pciAddress)
 	}
 

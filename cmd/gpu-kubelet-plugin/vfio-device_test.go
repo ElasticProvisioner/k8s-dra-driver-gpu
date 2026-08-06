@@ -17,9 +17,12 @@ limitations under the License.
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -48,4 +51,84 @@ func TestGetDriver(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "nvidia", driver)
 	})
+}
+
+func TestTryChangeDriverWithTimeout(t *testing.T) {
+	vm := &VfioPciManager{
+		nvidiaEnabled: true,
+	}
+
+	t.Run("returns success", func(t *testing.T) {
+		err := vm.tryChangeDriverWithTimeout(context.Background(), time.Second, func() error {
+			return nil
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("returns error", func(t *testing.T) {
+		expected := errors.New("work function failed")
+		err := vm.tryChangeDriverWithTimeout(context.Background(), time.Second, func() error {
+			return expected
+		})
+		require.ErrorIs(t, err, expected)
+	})
+
+	t.Run("returns on timeout", func(t *testing.T) {
+		started := make(chan struct{})
+		release := make(chan struct{})
+		finished := make(chan struct{})
+
+		err := vm.tryChangeDriverWithTimeout(context.Background(), 10*time.Millisecond, func() error {
+			close(started)
+			defer close(finished)
+			<-release
+			return nil
+		})
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		requireClosed(t, started)
+
+		close(release)
+		requireEventuallyClosed(t, finished)
+	})
+
+	t.Run("returns on caller cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		started := make(chan struct{})
+		release := make(chan struct{})
+		finished := make(chan struct{})
+
+		go func() {
+			<-started
+			cancel()
+		}()
+
+		err := vm.tryChangeDriverWithTimeout(ctx, time.Second, func() error {
+			close(started)
+			defer close(finished)
+			<-release
+			return nil
+		})
+		require.ErrorIs(t, err, context.Canceled)
+
+		close(release)
+		requireEventuallyClosed(t, finished)
+	})
+}
+
+func requireClosed(t *testing.T, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	default:
+		t.Fatal("expected channel to be closed")
+	}
+}
+
+func requireEventuallyClosed(t *testing.T, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for channel to close")
+	}
 }
