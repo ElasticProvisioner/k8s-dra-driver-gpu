@@ -19,7 +19,7 @@ both, satisfy the requirements for both features.
 
 | Component | Supported version / requirement | Applies to |
 |---|---|---|
-| Kubernetes | v1.34.2 or later. | GPU allocation |
+| Kubernetes | v1.34.2 or later.<br><br>Some features require enabling Kubernetes feature gates and can require newer Kubernetes versions.  Refer to [Feature gates](reference/feature-gates.md). | GPU allocation |
 | Kubernetes | v1.32 or later; v1.34.2 or later is recommended. DRA is enabled by default in v1.34 and later. On v1.32 and v1.33, enable the `DynamicResourceAllocation` feature gate and the corresponding `resource.k8s.io` API groups. | ComputeDomains |
 | Helm | v3.8 or later. | Both |
 | NVIDIA GPU Driver | v565 or later for a direct installation. GPU Operator v25.10.0 and later uses v580 or later for DRA. | GPU allocation |
