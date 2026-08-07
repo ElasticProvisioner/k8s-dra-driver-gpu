@@ -1,0 +1,179 @@
+/*
+Copyright The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package main
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	resourcev1 "k8s.io/api/resource/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
+	draclient "k8s.io/dynamic-resource-allocation/client"
+	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+	"k8s.io/klog/v2/ktesting"
+)
+
+func TestUnprepareIfStale(t *testing.T) {
+	tests := []struct {
+		name             string
+		checkpointUID    string
+		checkpointClaim  PreparedClaim
+		apiClaim         *resourcev1.ResourceClaim
+		apiError         error
+		expectNoAPICall  bool
+		expectUnprepared bool
+	}{
+		{
+			name:          "Checkpoint claim has no name",
+			checkpointUID: "claim-uid",
+			checkpointClaim: PreparedClaim{
+				Name:      "",
+				Namespace: "default",
+			},
+			apiClaim: &resourcev1.ResourceClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "claim-a",
+					Namespace: "default",
+					UID:       types.UID("claim-uid"),
+				},
+			},
+			expectNoAPICall:  true,
+			expectUnprepared: false,
+		},
+		{
+			name:          "API Claim exists with same UID",
+			checkpointUID: "claim-uid",
+			checkpointClaim: PreparedClaim{
+				Name:      "claim-a",
+				Namespace: "default",
+			},
+			apiClaim: &resourcev1.ResourceClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "claim-a",
+					Namespace: "default",
+					UID:       types.UID("claim-uid"),
+				},
+			},
+			expectUnprepared: false,
+		},
+		{
+			name:          "API Claim does not exist",
+			checkpointUID: "claim-uid",
+			checkpointClaim: PreparedClaim{
+				Name:      "claim-a",
+				Namespace: "default",
+			},
+			apiClaim:         nil,
+			expectUnprepared: true,
+		},
+		{
+			name:          "API Claim exists with different UID",
+			checkpointUID: "claim-uid",
+			checkpointClaim: PreparedClaim{
+				Name:      "claim-a",
+				Namespace: "default",
+			},
+			apiClaim: &resourcev1.ResourceClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "claim-a",
+					Namespace: "default",
+					UID:       types.UID("claim-diff"),
+				},
+			},
+			expectUnprepared: true,
+		},
+		{
+			name:          "API server returns transient error",
+			checkpointUID: "claim-uid",
+			checkpointClaim: PreparedClaim{
+				Name:      "claim-a",
+				Namespace: "default",
+			},
+			apiError: apierrors.NewInternalError(
+				errors.New("temporary API server failure"),
+			),
+			expectUnprepared: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ctx := ktesting.NewTestContext(t)
+			clientset := k8sfake.NewSimpleClientset()
+			if tc.apiClaim != nil {
+				clientset = k8sfake.NewSimpleClientset(tc.apiClaim)
+			}
+			if tc.apiError != nil {
+				clientset.PrependReactor(
+					"get",
+					"resourceclaims",
+					func(action k8stesting.Action) (bool, runtime.Object, error) {
+						return true, nil, tc.apiError
+					},
+				)
+			}
+
+			manager := NewCheckpointCleanupManager(nil, draclient.New(clientset))
+
+			var unprepared []kubeletplugin.NamespacedObject
+			manager.unprepfunc = func(
+				ctx context.Context,
+				ref kubeletplugin.NamespacedObject,
+			) error {
+				unprepared = append(unprepared, ref)
+				return nil
+			}
+
+			manager.unprepareIfStale(
+				ctx,
+				tc.checkpointUID,
+				tc.checkpointClaim,
+			)
+
+			if tc.expectUnprepared {
+				require.Len(t, unprepared, 1)
+
+				assert.Equal(t, types.UID(tc.checkpointUID), unprepared[0].UID)
+				assert.Equal(t, tc.checkpointClaim.Name, unprepared[0].Name)
+				assert.Equal(t, tc.checkpointClaim.Namespace, unprepared[0].Namespace)
+
+			} else {
+				assert.Empty(t, unprepared)
+			}
+
+			if tc.expectNoAPICall {
+				assert.Empty(t, clientset.Actions())
+			}
+
+			if tc.apiError != nil {
+				actions := clientset.Actions()
+				require.Len(t, actions, 1)
+				assert.Equal(t, "get", actions[0].GetVerb())
+				assert.Equal(t, "resourceclaims", actions[0].GetResource().Resource)
+				assert.Equal(t, tc.checkpointClaim.Namespace, actions[0].GetNamespace())
+			}
+		})
+	}
+}
