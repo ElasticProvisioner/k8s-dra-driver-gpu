@@ -107,7 +107,7 @@ fi
 
 # kind (pinned to the version nvkind vendors) and nvkind. nvkind has no
 # tags; pin a commit SHA. Bump with a reviewable diff after re-validating.
-: "${NVKIND_SHA:=8bce71ec58cf12b4003758eb4e49adac53cc40f2}"
+: "${NVKIND_SHA:=9a3061c75e59ac7e4f29e001f1c5875d46a7cc54}"
 go install sigs.k8s.io/kind@v0.31.0
 go install "github.com/NVIDIA/nvkind/cmd/nvkind@${NVKIND_SHA}"
 
