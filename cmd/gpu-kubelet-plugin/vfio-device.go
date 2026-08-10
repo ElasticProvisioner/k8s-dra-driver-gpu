@@ -82,15 +82,15 @@ func NewVfioPciManager(containerDriverRoot string, hostDriverRoot string, nvlib 
 
 // Configure binds the GPU to the vfio-pci driver.
 func (vm *VfioPciManager) Configure(ctx context.Context, info *VfioDeviceInfo) error {
-	if loaded, err := vm.checkKernelModuleLoaded(info.vfioModule); err == nil {
-		if !loaded {
-			err = vm.loadKernelModule(info.vfioModule)
-			if err != nil {
-				return fmt.Errorf("failed to load module %q: %w", info.vfioModule, err)
-			}
-		}
-	} else {
+	loaded, err := vm.checkKernelModuleLoaded(info.vfioModule)
+	if err != nil {
 		return fmt.Errorf("error checking if module %q is loaded: %w", info.vfioModule, err)
+	}
+	if !loaded {
+		err := vm.loadKernelModule(info.vfioModule)
+		if err != nil {
+			return fmt.Errorf("failed to load module %q: %w", info.vfioModule, err)
+		}
 	}
 
 	// If we were already in the middle of changing drivers, then don't proceed.
