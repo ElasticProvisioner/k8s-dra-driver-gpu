@@ -59,7 +59,7 @@ type OpaqueDeviceConfig struct {
 }
 
 type DeviceConfigState struct {
-	MpsControlDaemonID string              `json:"mpsControlDaemonID,omitempty"`
+	MpsControlDaemonID string              `json:"mpsControlDaemonID"`
 	MpsApplied         *bool               `json:"mpsApplied,omitempty"`
 	Config             configapi.Interface `json:"-"` // don't serialize this.
 	containerEdits     *cdiapi.ContainerEdits
