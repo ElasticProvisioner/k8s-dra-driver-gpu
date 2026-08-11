@@ -161,7 +161,7 @@ bats::on_failure() {
       .items[]
       | select(.spec.driver == "gpu.nvidia.com")
       | .spec.devices[]?
-      | select(.attributes.type.string == "gpu")
+      | select(.name == "gpu-0" and .attributes.type.string == "gpu")
       | .attributes["resource.kubernetes.io/numaNode"]
     ][0]
   ')
@@ -187,7 +187,7 @@ bats::on_failure() {
       .items[]
       | select(.spec.driver == "gpu.nvidia.com")
       | .spec.devices[]?
-      | select(.attributes.type.string == "gpu")
+      | select(.name == "gpu-0" and .attributes.type.string == "gpu")
       | .attributes["resource.kubernetes.io/numaNode"]
     ][0]
   ')
