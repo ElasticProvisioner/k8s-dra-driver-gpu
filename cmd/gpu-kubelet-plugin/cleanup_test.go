@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,6 +34,9 @@ import (
 	draclient "k8s.io/dynamic-resource-allocation/client"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2/ktesting"
+	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
+
+	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/flock"
 )
 
 func TestUnprepareIfStale(t *testing.T) {
@@ -175,5 +179,92 @@ func TestUnprepareIfStale(t *testing.T) {
 				assert.Equal(t, tc.checkpointClaim.Namespace, actions[0].GetNamespace())
 			}
 		})
+	}
+}
+
+func TestCleanupOnlyProcessesPrepareStarted(t *testing.T) {
+	checkpoint := &Checkpoint{
+		V2: &CheckpointV2{
+			PreparedClaims: PreparedClaimsByUIDV2{
+				"stale-uid": {
+					CheckpointState: ClaimCheckpointStatePrepareStarted,
+					Name:            "stale-claim",
+					Namespace:       "default",
+				},
+				"live-uid": {
+					CheckpointState: ClaimCheckpointStatePrepareStarted,
+					Name:            "live-claim",
+					Namespace:       "default",
+				},
+				"completed-uid": {
+					CheckpointState: ClaimCheckpointStatePrepareCompleted,
+					Name:            "completed-claim",
+					Namespace:       "default",
+				},
+				"unset-uid": {
+					CheckpointState: ClaimCheckpointStateUnset,
+					Name:            "unset-claim",
+					Namespace:       "default",
+				},
+			},
+		},
+	}
+
+	state := newCleanupTestDeviceState(t, checkpoint)
+
+	clientset := k8sfake.NewSimpleClientset(
+		&resourcev1.ResourceClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "stale-claim",
+				Namespace: "default",
+				UID:       types.UID("replacement-uid"),
+			},
+		},
+		&resourcev1.ResourceClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "live-claim",
+				Namespace: "default",
+				UID:       types.UID("live-uid"),
+			},
+		},
+	)
+
+	manager := NewCheckpointCleanupManager(state, draclient.New(clientset))
+
+	var unprepared []kubeletplugin.NamespacedObject
+	manager.unprepfunc = func(ctx context.Context, ref kubeletplugin.NamespacedObject) error {
+		unprepared = append(unprepared, ref)
+		return nil
+	}
+
+	_, ctx := ktesting.NewTestContext(t)
+
+	manager.cleanup(ctx)
+
+	require.Len(t, unprepared, 1)
+	assert.Equal(t, types.UID("stale-uid"), unprepared[0].UID)
+	assert.Equal(t, "stale-claim", unprepared[0].Name)
+	assert.Equal(t, "default", unprepared[0].Namespace)
+}
+
+func newCleanupTestDeviceState(t *testing.T, checkpoint *Checkpoint) *DeviceState {
+	t.Helper()
+
+	checkpointDir := t.TempDir()
+	cpManager, err := checkpointmanager.NewCheckpointManager(checkpointDir)
+	require.NoError(t, err)
+
+	if checkpoint != nil {
+		require.NoError(t, cpManager.CreateCheckpoint(
+			DriverPluginCheckpointFileBasename,
+			checkpoint,
+		))
+	}
+
+	return &DeviceState{
+		checkpointManager: cpManager,
+		cplock: flock.NewFlock(
+			filepath.Join(checkpointDir, "cp.lock"),
+		),
 	}
 }
