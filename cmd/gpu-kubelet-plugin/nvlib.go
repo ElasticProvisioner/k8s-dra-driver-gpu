@@ -48,6 +48,7 @@ type deviceLib struct {
 	driverLibraryPath string
 	devRoot           string
 	hostRoot          string
+	sysfsRoot         string
 	nvidiaSMIPath     string
 	gpuInfosByUUID    map[string]*GpuInfo
 	gpuUUIDbyPCIBusID map[PCIBusID]string
@@ -70,6 +71,10 @@ func newDeviceLib(driverRoot root, hostRoot root) (*deviceLib, error) {
 	nvmllib := nvml.New(
 		nvml.WithLibraryPath(driverLibraryPath),
 	)
+	sysfsRoot := strings.TrimSpace(os.Getenv("NVIDIA_DRA_SYSFS_ROOT"))
+	if sysfsRoot != "" {
+		klog.Infof("Using alternate sysfs root: %s", sysfsRoot)
+	}
 	nvpci := nvpci.New()
 	nvpassthrough := nvpassthrough.New(
 		nvpassthrough.WithNvpciLib(nvpci),
@@ -82,6 +87,7 @@ func newDeviceLib(driverRoot root, hostRoot root) (*deviceLib, error) {
 		driverLibraryPath: driverLibraryPath,
 		devRoot:           driverRoot.getDevRoot(),
 		hostRoot:          string(hostRoot),
+		sysfsRoot:         sysfsRoot,
 		nvidiaSMIPath:     nvidiaSMIPath,
 		nvpci:             nvpci,
 		nvpasst:           nvpassthrough,
@@ -546,7 +552,11 @@ func (l deviceLib) getGpuInfo(index int, device nvdev.Device) (*GpuInfo, error) 
 	pciBusIDAttr = &attr
 
 	var pcieRootAttr *deviceattribute.DeviceAttribute
-	if attr, err := deviceattribute.GetPCIeRootAttributeByPCIBusID(pciBusID); err == nil {
+	var machineModifiers []deviceattribute.MachineModifier
+	if l.sysfsRoot != "" {
+		machineModifiers = append(machineModifiers, deviceattribute.WithFSFromRoot(l.sysfsRoot))
+	}
+	if attr, err := deviceattribute.GetPCIeRootAttributeByPCIBusID(pciBusID, machineModifiers...); err == nil {
 		pcieRootAttr = &attr
 	} else {
 		klog.Warningf("error getting PCIe root for device %d, continuing without attribute: %v", index, err)

@@ -31,6 +31,7 @@
 #   GPU_COUNT         Number of GPUs to emulate, max 8 (default: 8)
 #   K8S_TEST_INFRA_DIR  Path to k8s-test-infra checkout (default: auto-detect via GOPATH)
 #   DRIVER_ROOT       Where to install mock driver (default: /var/lib/nvml-mock/driver)
+#   MOCK_SYSFS_ROOT   Where to render mock PCI/NUMA sysfs (default: $DRIVER_ROOT/sys)
 #   SKIP_NVIDIA_SMI   Set to "true" to skip nvidia-smi binary extraction (default: false)
 set -o errexit
 set -o nounset
@@ -66,6 +67,92 @@ if [ ! -f "${PROFILE_YAML}" ]; then
   echo "Available profiles: $(ls "${K8S_TEST_INFRA_DIR}/pkg/gpu/mocknvml/configs/" | sed 's/mock-nvml-config-//;s/\.yaml//' | tr '\n' ' ')" >&2
   exit 1
 fi
+
+render_mock_pci_numa_sysfs() {
+  local config_path="$1"
+  local sysfs_root="${MOCK_SYSFS_ROOT:-${DRIVER_ROOT}/sys}"
+
+  echo ""
+  echo "--- Rendering mock PCI NUMA sysfs ---"
+  echo "Sysfs root: ${sysfs_root}"
+
+  sudo mkdir -p "${sysfs_root}/bus/pci/devices"
+
+  local max_numa=-1
+  local index=0
+  local bdf
+  local numa
+  local root_complex
+  while read -r bdf; do
+    [ -n "${bdf}" ] || continue
+    numa=$((index / 2))
+    root_complex=$(printf "pci0000:%02x" $((numa * 64)))
+
+    sudo mkdir -p "${sysfs_root}/devices/${root_complex}/${bdf}"
+    printf "%s\n" "${numa}" | sudo tee "${sysfs_root}/devices/${root_complex}/${bdf}/numa_node" > /dev/null
+
+    sudo rm -f "${sysfs_root}/bus/pci/devices/${bdf}"
+    sudo ln -s "../../../devices/${root_complex}/${bdf}" "${sysfs_root}/bus/pci/devices/${bdf}"
+    echo "  ${bdf} -> NUMA node ${numa} (${root_complex})"
+
+    max_numa="${numa}"
+    index=$((index + 1))
+  done < <(awk '/^[[:space:]]+bus_id:/ { gsub(/"/, "", $2); print tolower($2) }' "${config_path}")
+
+  if [ "${max_numa}" -lt 0 ]; then
+    echo "WARNING: no PCI bus IDs found in ${config_path}; mock NUMA sysfs not rendered"
+    return 0
+  fi
+
+  render_mock_numa_slit "${sysfs_root}" "${max_numa}"
+}
+
+render_mock_numa_slit() {
+  local sysfs_root="$1"
+  local max_numa="$2"
+
+  # Render enough NUMA nodes for every physical node to have a same-socket
+  # partner. The DRA helper reads nodeX/distance and picks nodes at the minimum
+  # non-self SLIT distance, filtered by physical_package_id when available.
+  local node_count=$(( (max_numa / 2 + 1) * 2 ))
+  local node_dir
+  local cpu_dir
+  local row
+  local distance
+  local i
+  local j
+
+  sudo mkdir -p "${sysfs_root}/devices/system/node" "${sysfs_root}/devices/system/cpu"
+  if [ "${node_count}" -eq 1 ]; then
+    printf "0\n" | sudo tee "${sysfs_root}/devices/system/node/online" > /dev/null
+  else
+    printf "0-%d\n" $((node_count - 1)) | sudo tee "${sysfs_root}/devices/system/node/online" > /dev/null
+  fi
+
+  for i in $(seq 0 $((node_count - 1))); do
+    node_dir="${sysfs_root}/devices/system/node/node${i}"
+    cpu_dir="${sysfs_root}/devices/system/cpu/cpu${i}/topology"
+    sudo mkdir -p "${node_dir}" "${cpu_dir}"
+
+    printf "%d\n" "${i}" | sudo tee "${node_dir}/cpulist" > /dev/null
+    printf "%d\n" $((i / 2)) | sudo tee "${cpu_dir}/physical_package_id" > /dev/null
+
+    row=""
+    for j in $(seq 0 $((node_count - 1))); do
+      if [ "${i}" -eq "${j}" ]; then
+        distance=10
+      elif [ $((i / 2)) -eq $((j / 2)) ]; then
+        distance=12
+      else
+        distance=20
+      fi
+      row="${row}${row:+ }${distance}"
+    done
+    printf "%s\n" "${row}" | sudo tee "${node_dir}/distance" > /dev/null
+  done
+
+  echo "Rendered NUMA SLIT with ${node_count} node(s); same-socket distance=12, cross-socket distance=20"
+}
 
 # --- Step 1: Build mock NVML library ---
 echo ""
@@ -129,6 +216,9 @@ sudo sed -i "s|driver_version:.*|driver_version: \"${DRIVER_VERSION}\"|" "${DRIV
 sudo sed -i "s|nvml_version:.*|nvml_version: \"12.${DRIVER_VERSION}\"|" "${DRIVER_ROOT}/config/config.yaml"
 
 echo "Installed config for ${GPU_PROFILE} with ${GPU_COUNT} devices, driver ${DRIVER_VERSION}"
+
+# --- Step 4b: Render PCI sysfs with NUMA SLIT data ---
+render_mock_pci_numa_sysfs "${DRIVER_ROOT}/config/config.yaml"
 
 # --- Step 5: Extract and patch nvidia-smi ---
 if [ "${SKIP_NVIDIA_SMI}" = "true" ]; then

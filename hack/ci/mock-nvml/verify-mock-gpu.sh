@@ -148,6 +148,24 @@ check_output "config has num_devices injected" "num_devices: ${GPU_COUNT}" \
 
 # =========================================================================
 echo ""
+echo "=== Layer 2b: Mock PCI NUMA sysfs ==="
+# =========================================================================
+FIRST_PCI_BUS_ID=$(awk '/^[[:space:]]+bus_id:/ { gsub(/"/, "", $2); print tolower($2); exit }' "${DRIVER_ROOT}/config/config.yaml")
+if [ -n "${FIRST_PCI_BUS_ID}" ]; then
+  check "mock PCI sysfs numa_node exists for ${FIRST_PCI_BUS_ID}" \
+    test -f "${DRIVER_ROOT}/sys/bus/pci/devices/${FIRST_PCI_BUS_ID}/numa_node"
+
+  check_output "mock NUMA SLIT exposes same-socket distance" "10 12" \
+    cat "${DRIVER_ROOT}/sys/devices/system/node/node0/distance"
+
+  check_output "mock NUMA socket hint exists" "0" \
+    cat "${DRIVER_ROOT}/sys/devices/system/cpu/cpu0/topology/physical_package_id"
+else
+  skip_check "mock PCI NUMA sysfs" "no PCI bus IDs in profile"
+fi
+
+# =========================================================================
+echo ""
 echo "=== Layer 3: Device Nodes ==="
 # =========================================================================
 for i in $(seq 0 $((GPU_COUNT - 1))); do
