@@ -268,3 +268,14 @@ func newCleanupTestDeviceState(t *testing.T, checkpoint *Checkpoint) *DeviceStat
 		),
 	}
 }
+
+func TestEnqueueCleanup(t *testing.T) {
+	manager := NewCheckpointCleanupManager(nil, nil)
+
+	require.True(t, manager.enqueueCleanup())
+	require.False(t, manager.enqueueCleanup())
+
+	<-manager.queue
+
+	require.True(t, manager.enqueueCleanup())
+}
