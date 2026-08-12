@@ -262,6 +262,8 @@ func admitResourceClaimParameters(ar admissionv1.AdmissionReview) *admissionv1.A
 			configInterface = castConfig
 		case *nvapi.MigDeviceConfig:
 			configInterface = castConfig
+		case *nvapi.VfioDeviceConfig:
+			configInterface = castConfig
 		case *nvapi.ComputeDomainChannelConfig:
 			configInterface = castConfig
 		case *nvapi.ComputeDomainDaemonConfig:
