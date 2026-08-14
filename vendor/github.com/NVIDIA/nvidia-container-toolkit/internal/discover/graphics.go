@@ -67,6 +67,7 @@ func NewGraphicsMountsDiscoverer(logger logger.Interface, driver *root.Driver, h
 			"nvidia/nvoptix.bin",
 			"X11/xorg.conf.d/10-nvidia.conf",
 			"X11/xorg.conf.d/nvidia-drm-outputclass.conf",
+			"OpenCL/vendors/nvidia.icd",
 		},
 	)
 
@@ -110,18 +111,21 @@ func newVulkanConfigsDiscover(logger logger.Interface, driver *root.Driver) Disc
 
 type graphicsDriverLibraries struct {
 	Discover
-	logger      logger.Interface
-	hookCreator HookCreator
+	logger        logger.Interface
+	hookCreator   HookCreator
+	driverVersion string
 }
 
 var _ Discover = (*graphicsDriverLibraries)(nil)
 
 func newGraphicsLibrariesDiscoverer(logger logger.Interface, driver *root.Driver, hookCreator HookCreator) (Discover, error) {
-	cudaVersionPattern, err := driver.Version()
+	// We use the driver version as a suffix for matching libraries that are
+	// part of the driver.
+	driverVersion, err := driver.Version()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get driver version: %w", err)
 	}
-	cudaLibRoot, err := driver.GetDriverLibDirectory()
+	cudaLibRoots, err := driver.GetDriverLibDirectories()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get libcuda.so parent directory: %w", err)
 	}
@@ -142,8 +146,8 @@ func newGraphicsLibrariesDiscoverer(logger logger.Interface, driver *root.Driver
 			// * libnvidia-allocator.so.RM_VERSION
 			// * libnvidia-vulkan-producer.so.RM_VERSION
 			// but need to be handled for the legacy case too.
-			"libnvidia-allocator.so." + cudaVersionPattern,
-			"libnvidia-vulkan-producer.so." + cudaVersionPattern,
+			"libnvidia-allocator.so." + driverVersion,
+			"libnvidia-vulkan-producer.so." + driverVersion,
 		},
 	)
 
@@ -152,20 +156,21 @@ func newGraphicsLibrariesDiscoverer(logger logger.Interface, driver *root.Driver
 		lookup.NewFileLocator(
 			lookup.WithLogger(logger),
 			lookup.WithRoot(driver.Root),
-			lookup.WithSearchPaths(buildXOrgSearchPaths(cudaLibRoot)...),
+			lookup.WithSearchPaths(buildXOrgSearchPaths(cudaLibRoots...)...),
 			lookup.WithCount(1),
 		),
 		driver.Root,
 		[]string{
 			"nvidia_drv.so",
-			"libglxserver_nvidia.so." + cudaVersionPattern,
+			"libglxserver_nvidia.so." + driverVersion,
 		},
 	)
 
 	return &graphicsDriverLibraries{
-		Discover:    Merge(libraries, xorgLibraries),
-		logger:      logger,
-		hookCreator: hookCreator,
+		Discover:      Merge(libraries, xorgLibraries),
+		logger:        logger,
+		hookCreator:   hookCreator,
+		driverVersion: driverVersion,
 	}, nil
 }
 
@@ -233,14 +238,20 @@ func (d graphicsDriverLibraries) Hooks() ([]Hook, error) {
 
 // isDriverLibrary checks whether the specified filename is a specific driver library.
 func (d graphicsDriverLibraries) isDriverLibrary(filename string, libraryName string) bool {
-	// TODO: Instead of `.*.*` we could use the driver version.
-	pattern := strings.TrimSuffix(libraryName, ".") + ".*.*"
-	match, _ := filepath.Match(pattern, filename)
-	return match
+	return filename == strings.TrimSuffix(libraryName, ".")+"."+d.driverVersion
 }
 
-// buildXOrgSearchPaths returns the ordered list of search paths for XOrg files.
-func buildXOrgSearchPaths(libRoot string) []string {
+// buildXOrgSearchPaths returns search paths from all roots
+func buildXOrgSearchPaths(roots ...string) []string {
+	var paths []string
+	for _, root := range roots {
+		paths = append(paths, buildXOrgSearchPathsAtRoot(root)...)
+	}
+	return paths
+}
+
+// buildXOrgSearchPathsAtRoot returns the ordered list of search paths for XOrg files.
+func buildXOrgSearchPathsAtRoot(libRoot string) []string {
 	var paths []string
 	if libRoot != "" {
 		paths = append(paths,
