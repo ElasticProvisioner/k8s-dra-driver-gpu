@@ -126,6 +126,106 @@ func TestValidateNoOverlappingPreparedDevices(t *testing.T) {
 	}
 }
 
+func TestGetAllocatableDevicesForClaim(t *testing.T) {
+	gpu0 := &AllocatableDevice{Gpu: &GpuInfo{UUID: "GPU-0000"}}
+	vfio1 := &AllocatableDevice{Vfio: &VfioDeviceInfo{UUID: "VFIO-0001"}}
+	mig2 := &AllocatableDevice{MigDynamic: &MigSpec{Parent: &GpuInfo{UUID: "GPU-0002"}}}
+	claimStatus := func(results ...resourceapi.DeviceRequestAllocationResult) resourceapi.ResourceClaimStatus {
+		return resourceapi.ResourceClaimStatus{
+			Allocation: &resourceapi.AllocationResult{
+				Devices: resourceapi.DeviceAllocationResult{Results: results},
+			},
+		}
+	}
+	state := &DeviceState{
+		perGPUAllocatable: &PerGPUAllocatableDevices{
+			allocatablesMap: map[PCIBusID]AllocatableDevices{
+				"0000:00:00.0": {
+					"gpu-0": gpu0,
+				},
+				"0000:00:01.0": {
+					"vfio-1": vfio1,
+				},
+				"0000:00:02.0": {
+					"mig-2": mig2,
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name   string
+		status resourceapi.ResourceClaimStatus
+		want   AllocatableDevices
+	}{
+		{
+			name:   "nil allocation",
+			status: resourceapi.ResourceClaimStatus{},
+			want:   AllocatableDevices{},
+		},
+		{
+			name:   "empty allocation results",
+			status: claimStatus(),
+			want:   AllocatableDevices{},
+		},
+		{
+			name: "returns GPU device",
+			status: claimStatus(
+				resourceapi.DeviceRequestAllocationResult{Driver: DriverName, Device: "gpu-0"},
+			),
+			want: AllocatableDevices{
+				"gpu-0": gpu0,
+			},
+		},
+		{
+			name: "returns VFIO device",
+			status: claimStatus(
+				resourceapi.DeviceRequestAllocationResult{Driver: DriverName, Device: "vfio-1"},
+			),
+			want: AllocatableDevices{
+				"vfio-1": vfio1,
+			},
+		},
+		{
+			name: "returns MIG device",
+			status: claimStatus(
+				resourceapi.DeviceRequestAllocationResult{Driver: DriverName, Device: "mig-2"},
+			),
+			want: AllocatableDevices{
+				"mig-2": mig2,
+			},
+		},
+		{
+			name: "ignores devices from other drivers",
+			status: claimStatus(
+				resourceapi.DeviceRequestAllocationResult{Driver: "other.example.com", Device: "gpu-0"},
+			),
+			want: AllocatableDevices{},
+		},
+		{
+			name: "skips missing allocatable devices",
+			status: claimStatus(
+				resourceapi.DeviceRequestAllocationResult{Driver: DriverName, Device: "missing"},
+				resourceapi.DeviceRequestAllocationResult{Driver: DriverName, Device: "gpu-0"},
+			),
+			want: AllocatableDevices{
+				"gpu-0": gpu0,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pc := PreparedClaim{Status: tc.status}
+
+			got := state.getAllocatableDevicesForClaim("claim-uid", pc)
+
+			require.NotNil(t, got)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestApplySharingConfigMpsDisallowedWithConsumableShares(t *testing.T) {
 	perGPU := &PerGPUAllocatableDevices{
 		allocatablesMap: map[PCIBusID]AllocatableDevices{
