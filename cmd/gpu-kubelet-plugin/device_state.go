@@ -289,6 +289,11 @@ func NewDeviceState(ctx context.Context, config *Config) (*DeviceState, error) {
 }
 
 func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceClaim) ([]kubeletplugin.Device, error) {
+
+	if err := s.validateAdminAccessRequest(claim); err != nil {
+		return nil, err
+	}
+
 	tplock0 := time.Now()
 	s.Lock()
 	defer s.Unlock()
@@ -901,6 +906,56 @@ func (s *DeviceState) deleteClaimFromCheckpoint(ctx context.Context, claimRef ku
 	return nil
 }
 
+// validateAdminAccessRequest rejects admin-access requests that are incompatible
+// with how this driver treats admin access. Admin access is meant for host-side
+// monitoring/management of a full GPU, so it must not be combined with:
+//   - a non-full-GPU device (e.g. a VFIO passthrough or MIG device), or
+//   - any device configuration that applies to the admin-access request.
+func (s *DeviceState) validateAdminAccessRequest(claim *resourceapi.ResourceClaim) error {
+	if claim.Status.Allocation == nil {
+		return nil
+	}
+
+	// Reject admin access on any device that is not a full GPU.
+	adminRequests := make(map[string]struct{})
+	for _, r := range claim.Status.Allocation.Devices.Results {
+		if r.Driver != DriverName {
+			continue
+		}
+		if r.AdminAccess == nil || !*r.AdminAccess {
+			continue
+		}
+		adminRequests[r.Request] = struct{}{}
+		device := s.perGPUAllocatable.GetAllocatableDevice(r.Device)
+		if device != nil && device.Type() != GpuDeviceType {
+			return fmt.Errorf("claim %s requests admin access on a non-full-GPU device, which is not supported", ResourceClaimToString(claim))
+		}
+	}
+
+	if len(adminRequests) == 0 {
+		return nil
+	}
+
+	// Reject admin access combined with any device configuration for this driver
+	// that applies to an admin-access request.
+	for _, cfg := range claim.Status.Allocation.Devices.Config {
+		if cfg.Opaque == nil || cfg.Opaque.Driver != DriverName {
+			continue
+		}
+		// An empty Requests list means the config applies to every request in the
+		// claim, including the admin-access ones.
+		if len(cfg.Requests) == 0 {
+			return fmt.Errorf("claim %s requests admin access with a device configuration, which is not supported", ResourceClaimToString(claim))
+		}
+		for _, req := range cfg.Requests {
+			if _, ok := adminRequests[req]; ok {
+				return fmt.Errorf("claim %s requests admin access with a device configuration, which is not supported", ResourceClaimToString(claim))
+			}
+		}
+	}
+	return nil
+}
+
 func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.ResourceClaim, cp *Checkpoint) (PreparedDevices, error) {
 	if claim.Status.Allocation == nil {
 		return nil, fmt.Errorf("claim not yet allocated")
@@ -1391,7 +1446,7 @@ func (s *DeviceState) gpuInfosFromPreparedClaim(results []resourceapi.DeviceRequ
 // Callers that include VFIO devices must first rebind those GPUs to the nvidia
 // driver and rediscover so each VFIO device's parent is repopulated.
 func (s *DeviceState) deactivateFabricPartition(claimUID string, pc *PreparedClaim, checkpoint *Checkpoint) error {
-	if !s.fabricManagerPartitioningEnabled() || pc.Status.Allocation == nil {
+	if !s.fabricManagerPartitioningEnabled() || pc.Status.Allocation == nil || isAdminAccess(pc.Status.Allocation.Devices.Results) {
 		return nil
 	}
 	gpus := s.gpuInfosFromPreparedClaim(pc.Status.Allocation.Devices.Results)
@@ -1451,6 +1506,10 @@ func (s *DeviceState) fabricManagerPartitioningEnabled() bool {
 // GPUs backing the claim's allocation results. The caller must ensure
 // fabricManagerPartitioningEnabled() is true and that the claim is allocated.
 func (s *DeviceState) activateFabricPartition(claim *resourceapi.ResourceClaim) error {
+	if isAdminAccess(claim.Status.Allocation.Devices.Results) {
+		return nil
+	}
+
 	gpus := s.gpuInfosFromPreparedClaim(claim.Status.Allocation.Devices.Results)
 	if len(gpus) == 0 {
 		return nil
@@ -1805,10 +1864,33 @@ func isGpuUUIDInUseByOtherClaims(checkpoint *Checkpoint, claimUID string, gpuUUI
 		if otherClaim.CheckpointState != ClaimCheckpointStatePrepareCompleted {
 			continue
 		}
-		for _, u := range otherClaim.PreparedDevices.GpuUUIDs() {
-			if u == gpuUUID {
-				return true
+		for _, group := range otherClaim.PreparedDevices {
+			for _, dev := range group.Devices {
+				if dev.Gpu == nil || dev.Gpu.Info == nil || dev.Gpu.Device == nil {
+					continue
+				}
+				if preparedClaimDeviceHasAdminAccess(&otherClaim, dev.Gpu.Device.DeviceName) {
+					continue
+				}
+				if dev.Gpu.Info.UUID == gpuUUID {
+					return true
+				}
 			}
+		}
+	}
+	return false
+}
+
+func preparedClaimDeviceHasAdminAccess(claim *PreparedClaim, deviceName DeviceName) bool {
+	if claim == nil || claim.Status.Allocation == nil {
+		return false
+	}
+	for _, result := range claim.Status.Allocation.Devices.Results {
+		if result.Driver != DriverName || result.Device != deviceName {
+			continue
+		}
+		if result.AdminAccess != nil && *result.AdminAccess {
+			return true
 		}
 	}
 	return false
@@ -1888,6 +1970,18 @@ func (s *DeviceState) AddDeviceTaint(d *AllocatableDevice, taint *resourceapi.De
 func (s *DeviceState) IsMigCapable() bool {
 	for _, gpu := range s.nvdevlib.gpuInfosByUUID {
 		if gpu.migCapable {
+			return true
+		}
+	}
+	return false
+}
+
+func isAdminAccess(results []resourceapi.DeviceRequestAllocationResult) bool {
+	for _, r := range results {
+		if r.Driver != DriverName {
+			continue
+		}
+		if r.AdminAccess != nil && *r.AdminAccess {
 			return true
 		}
 	}

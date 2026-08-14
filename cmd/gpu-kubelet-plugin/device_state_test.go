@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	configapi "sigs.k8s.io/dra-driver-nvidia-gpu/api/nvidia.com/resource/v1beta1"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/fabricmanager"
@@ -311,6 +312,16 @@ func TestSharingReferenceCountingHelpers(t *testing.T) {
 			PreparedClaims: PreparedClaimsByUID{
 				"claim-1": {
 					CheckpointState: ClaimCheckpointStatePrepareCompleted,
+					Status: resourceapi.ResourceClaimStatus{
+						Allocation: &resourceapi.AllocationResult{
+							Devices: resourceapi.DeviceAllocationResult{
+								Results: []resourceapi.DeviceRequestAllocationResult{
+									{Driver: DriverName, Device: "gpu-0"},
+									{Driver: DriverName, Device: "mig-0"},
+								},
+							},
+						},
+					},
 					PreparedDevices: PreparedDevices{
 						{
 							Devices: PreparedDeviceList{
@@ -334,6 +345,41 @@ func TestSharingReferenceCountingHelpers(t *testing.T) {
 						},
 					},
 				},
+				"claim-admin": {
+					CheckpointState: ClaimCheckpointStatePrepareCompleted,
+					Status: resourceapi.ResourceClaimStatus{
+						Allocation: &resourceapi.AllocationResult{
+							Devices: resourceapi.DeviceAllocationResult{
+								Results: []resourceapi.DeviceRequestAllocationResult{
+									{Driver: DriverName, Device: "gpu-admin", AdminAccess: ptr.To(true)},
+									{Driver: DriverName, Device: "gpu-non-admin"},
+								},
+							},
+						},
+					},
+					PreparedDevices: PreparedDevices{
+						{
+							Devices: PreparedDeviceList{
+								{
+									Gpu: &PreparedGpu{
+										Info: &GpuInfo{UUID: "GPU-ADMIN"},
+										Device: &CheckpointedDevice{
+											DeviceName: "gpu-admin",
+										},
+									},
+								},
+								{
+									Gpu: &PreparedGpu{
+										Info: &GpuInfo{UUID: "GPU-NON-ADMIN"},
+										Device: &CheckpointedDevice{
+											DeviceName: "gpu-non-admin",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
 			},
 		},
 	}
@@ -349,6 +395,9 @@ func TestSharingReferenceCountingHelpers(t *testing.T) {
 	require.True(t, isMigDeviceInUseByOtherClaims(checkpoint, "claim-2", "MIG-2222", "mig-0"))
 	require.False(t, isMigDeviceInUseByOtherClaims(checkpoint, "claim-2", "MIG-9999", "mig-9"))
 	require.False(t, isMigDeviceInUseByOtherClaims(checkpoint, "claim-1", "MIG-2222", "mig-0"))
+
+	require.False(t, isGpuUUIDInUseByOtherClaims(checkpoint, "claim-2", "GPU-ADMIN"))
+	require.True(t, isGpuUUIDInUseByOtherClaims(checkpoint, "claim-2", "GPU-NON-ADMIN"))
 
 	var cpNil *Checkpoint
 	require.False(t, isGpuUUIDInUseByOtherClaims(cpNil, "claim-1", "GPU-1111"))
@@ -484,4 +533,143 @@ func TestDeactivateFabricPartitionRefCounting(t *testing.T) {
 	err = state.deactivateFabricPartition("claim-1", &pc1, checkpoint)
 	require.NoError(t, err)
 	require.Equal(t, []int{1}, fmClient.deactivatedIDs, "FM partition deactivation MUST be called when no active claims remain")
+}
+
+func TestValidateAdminAccessRequest(t *testing.T) {
+	state := &DeviceState{
+		perGPUAllocatable: &PerGPUAllocatableDevices{
+			allocatablesMap: map[PCIBusID]AllocatableDevices{
+				"0000:00:00.0": {
+					"gpu-0":  &AllocatableDevice{Gpu: &GpuInfo{minor: 0}},
+					"vfio-0": &AllocatableDevice{Vfio: &VfioDeviceInfo{index: 0}},
+					"mig-0":  &AllocatableDevice{MigStatic: &MigDeviceInfo{}},
+				},
+			},
+		},
+	}
+
+	// driverConfig builds a config for this driver applying to the given requests
+	// (empty requests means it applies to every request in the claim).
+	driverConfig := func(requests ...string) resourceapi.DeviceAllocationConfiguration {
+		return resourceapi.DeviceAllocationConfiguration{
+			Source:   resourceapi.AllocationConfigSourceClaim,
+			Requests: requests,
+			DeviceConfiguration: resourceapi.DeviceConfiguration{
+				Opaque: &resourceapi.OpaqueDeviceConfiguration{Driver: DriverName},
+			},
+		}
+	}
+	otherDriverConfig := func(requests ...string) resourceapi.DeviceAllocationConfiguration {
+		c := driverConfig(requests...)
+		c.Opaque.Driver = "other.driver.com"
+		return c
+	}
+
+	adminGpu := resourceapi.DeviceRequestAllocationResult{Driver: DriverName, Request: "gpu", Device: "gpu-0", AdminAccess: ptr.To(true)}
+	nonAdminGpu := resourceapi.DeviceRequestAllocationResult{Driver: DriverName, Request: "gpu", Device: "gpu-0"}
+	adminVfio := resourceapi.DeviceRequestAllocationResult{Driver: DriverName, Request: "gpu", Device: "vfio-0", AdminAccess: ptr.To(true)}
+	adminMig := resourceapi.DeviceRequestAllocationResult{Driver: DriverName, Request: "gpu", Device: "mig-0", AdminAccess: ptr.To(true)}
+
+	tests := []struct {
+		name    string
+		noAlloc bool
+		results []resourceapi.DeviceRequestAllocationResult
+		configs []resourceapi.DeviceAllocationConfiguration
+		wantErr bool
+	}{
+		{
+			name:    "no allocation",
+			noAlloc: true,
+		},
+		{
+			name:    "vfio without admin access",
+			results: []resourceapi.DeviceRequestAllocationResult{{Driver: DriverName, Request: "gpu", Device: "vfio-0"}},
+		},
+		{
+			name:    "vfio with admin access rejected",
+			results: []resourceapi.DeviceRequestAllocationResult{adminVfio},
+			wantErr: true,
+		},
+		{
+			name:    "gpu with admin access, no config, allowed",
+			results: []resourceapi.DeviceRequestAllocationResult{adminGpu},
+		},
+		{
+			name:    "mig with admin access rejected",
+			results: []resourceapi.DeviceRequestAllocationResult{adminMig},
+			wantErr: true,
+		},
+		{
+			name:    "mixed: gpu plus admin-access vfio rejected",
+			results: []resourceapi.DeviceRequestAllocationResult{nonAdminGpu, adminVfio},
+			wantErr: true,
+		},
+		{
+			name:    "admin-access vfio for other driver ignored",
+			results: []resourceapi.DeviceRequestAllocationResult{{Driver: "other.driver.com", Request: "gpu", Device: "vfio-0", AdminAccess: ptr.To(true)}},
+		},
+		{
+			name:    "gpu admin access with config targeting the request rejected",
+			results: []resourceapi.DeviceRequestAllocationResult{adminGpu},
+			configs: []resourceapi.DeviceAllocationConfiguration{driverConfig("gpu")},
+			wantErr: true,
+		},
+		{
+			name:    "gpu admin access with claim-wide config rejected",
+			results: []resourceapi.DeviceRequestAllocationResult{adminGpu},
+			configs: []resourceapi.DeviceAllocationConfiguration{driverConfig()},
+			wantErr: true,
+		},
+		{
+			name:    "gpu admin access with config for another request allowed",
+			results: []resourceapi.DeviceRequestAllocationResult{adminGpu},
+			configs: []resourceapi.DeviceAllocationConfiguration{driverConfig("other")},
+		},
+		{
+			name:    "non-admin gpu with config allowed",
+			results: []resourceapi.DeviceRequestAllocationResult{nonAdminGpu},
+			configs: []resourceapi.DeviceAllocationConfiguration{driverConfig("gpu")},
+		},
+		{
+			name:    "gpu admin access with config for another driver allowed",
+			results: []resourceapi.DeviceRequestAllocationResult{adminGpu},
+			configs: []resourceapi.DeviceAllocationConfiguration{otherDriverConfig("gpu")},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			claim := &resourceapi.ResourceClaim{}
+			if !tc.noAlloc {
+				claim.Status.Allocation = &resourceapi.AllocationResult{
+					Devices: resourceapi.DeviceAllocationResult{
+						Results: tc.results,
+						Config:  tc.configs,
+					},
+				}
+			}
+			err := state.validateAdminAccessRequest(claim)
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestIsAdminAccessIgnoresOtherDrivers(t *testing.T) {
+	results := []resourceapi.DeviceRequestAllocationResult{
+		{Driver: "other.driver.com", AdminAccess: ptr.To(true)},
+		{Driver: DriverName},
+	}
+
+	require.False(t, isAdminAccess(results))
+
+	results = append(results, resourceapi.DeviceRequestAllocationResult{
+		Driver:      DriverName,
+		AdminAccess: ptr.To(true),
+	})
+
+	require.True(t, isAdminAccess(results))
 }
