@@ -603,7 +603,10 @@ func (s *DeviceState) unprepareDevices(ctx context.Context, cs *resourceapi.Reso
 			}
 		case *configapi.ComputeDomainDaemonConfig:
 			// If a daemon type, unprepare the new ComputeDomain daemon.
-			computeDomainDaemonSettings := s.computeDomainManager.NewSettings(config.DomainID)
+			computeDomainDaemonSettings, err := s.computeDomainManager.NewSettings(config.DomainID)
+			if err != nil {
+				return fmt.Errorf("error creating ComputeDomain daemon settings: %w", err)
+			}
 			if err := computeDomainDaemonSettings.Unprepare(ctx); err != nil {
 				return fmt.Errorf("error unpreparing ComputeDomain daemon settings: %w", err)
 			}
@@ -764,7 +767,10 @@ func (s *DeviceState) applyComputeDomainDaemonConfig(ctx context.Context, config
 	}
 
 	// Create new ComputeDomain daemon settings from the ComputeDomainManager.
-	computeDomainDaemonSettings := s.computeDomainManager.NewSettings(config.DomainID)
+	computeDomainDaemonSettings, err := s.computeDomainManager.NewSettings(config.DomainID)
+	if err != nil {
+		return nil, permanentError{fmt.Errorf("error creating ComputeDomain daemon settings: %w", err)}
+	}
 
 	// Prepare injecting IMEX daemon config files even if IMEX is not supported.
 	// This for example creates

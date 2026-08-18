@@ -37,7 +37,8 @@ import (
 )
 
 const (
-	DriverName = "gpu.nvidia.com"
+	DriverName              = "gpu.nvidia.com"
+	ComputeDomainDriverName = "compute-domain.nvidia.com"
 )
 
 type Flags struct {
@@ -196,7 +197,7 @@ func readAdmissionReview(data []byte) (*admissionv1.AdmissionReview, error) {
 }
 
 // admitResourceClaimParameters accepts both ResourceClaims and ResourceClaimTemplates and validates their
-// opaque device configuration parameters for this driver.
+// opaque device configuration parameters for both gpu and compute-domain drivers.
 func admitResourceClaimParameters(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
 	klog.V(2).Info("admitting resource claim parameters")
 
@@ -243,7 +244,8 @@ func admitResourceClaimParameters(ar admissionv1.AdmissionReview) *admissionv1.A
 
 	var errs []error
 	for configIndex, config := range deviceConfigs {
-		if config.Opaque == nil || config.Opaque.Driver != DriverName {
+		if config.Opaque == nil ||
+			(config.Opaque.Driver != DriverName && config.Opaque.Driver != ComputeDomainDriverName) {
 			continue
 		}
 
