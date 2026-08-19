@@ -115,6 +115,29 @@ func TestResourceClaimValidatingWebhook(t *testing.T) {
 			expectedAllowed: false,
 			expectedMessage: "2 configs failed to validate: object at spec.devices.config[0].opaque.parameters is invalid: unknown time-slice interval: Invalid Interval, supported time-slice intervals: Default, Short, Medium, Long; object at spec.devices.config[1].opaque.parameters is invalid: active thread percentage must not be negative",
 		},
+		"valid ComputeDomainDaemonConfig in ResourceClaim": {
+			admissionReview: admissionReviewWithObject(
+				resourceClaimWithComputeDomainDaemonConfig(
+					resourceClaimResourceV1Beta1,
+					&configapi.ComputeDomainDaemonConfig{
+						DomainID: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+					},
+				),
+			),
+			expectedAllowed: true,
+		},
+		"path traversal domainID in ComputeDomainDaemonConfig is rejected": {
+			admissionReview: admissionReviewWithObject(
+				resourceClaimWithComputeDomainDaemonConfig(
+					resourceClaimResourceV1Beta1,
+					&configapi.ComputeDomainDaemonConfig{
+						DomainID: "../../../../../../escape-target/pwn",
+					},
+				),
+			),
+			expectedAllowed: false,
+			expectedMessage: `1 configs failed to validate: object at spec.devices.config[0].opaque.parameters is invalid: domainID "../../../../../../escape-target/pwn" is not a valid single path component: may not contain '/'`,
+		},
 		"valid GpuConfig in ResourceClaimTemplate": {
 			featureGates: map[string]bool{
 				string(featuregates.TimeSlicingSettings): true,
@@ -497,6 +520,36 @@ func resourceClaimTemplateWithGpuConfigs(gvr metav1.GroupVersionResource, gpuCon
 		},
 	}
 	return resourceClaimTemplate
+}
+
+func resourceClaimWithComputeDomainDaemonConfig(gvr metav1.GroupVersionResource, config *configapi.ComputeDomainDaemonConfig) *resourceapi.ResourceClaim {
+	config.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   configapi.GroupName,
+		Version: configapi.Version,
+		Kind:    "ComputeDomainDaemonConfig",
+	})
+	return &resourceapi.ResourceClaim{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: gvr.Group + "/" + gvr.Version,
+			Kind:       "ResourceClaim",
+		},
+		Spec: resourceapi.ResourceClaimSpec{
+			Devices: resourceapi.DeviceClaim{
+				Config: []resourceapi.DeviceClaimConfiguration{
+					{
+						DeviceConfiguration: resourceapi.DeviceConfiguration{
+							Opaque: &resourceapi.OpaqueDeviceConfiguration{
+								Driver: ComputeDomainDriverName,
+								Parameters: runtime.RawExtension{
+									Object: config,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func resourceClaimSpecWithGpuConfigs(gpuConfigs ...*configapi.GpuConfig) resourceapi.ResourceClaimSpec {

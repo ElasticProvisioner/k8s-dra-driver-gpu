@@ -189,14 +189,17 @@ func (m *ComputeDomainManager) Stop() error {
 	return nil
 }
 
-func (m *ComputeDomainManager) NewSettings(domainID string) *ComputeDomainDaemonSettings {
+func (m *ComputeDomainManager) NewSettings(domainID string) (*ComputeDomainDaemonSettings, error) {
+	if err := nvapi.ValidateDomainID(domainID); err != nil {
+		return nil, fmt.Errorf("invalid domainID: %w", err)
+	}
 	return &ComputeDomainDaemonSettings{
 		manager:         m,
 		domainID:        domainID,
-		rootDir:         fmt.Sprintf("%s/%s", m.configFilesRoot, domainID),
-		configTmplPath:  fmt.Sprintf("%s/%s/%s", m.configFilesRoot, domainID, "imexd.cfg.tmpl"),
-		nodesConfigPath: fmt.Sprintf("%s/%s/%s", m.configFilesRoot, domainID, "nodes.cfg"),
-	}
+		rootDir:         filepath.Join(m.configFilesRoot, domainID),
+		configTmplPath:  filepath.Join(m.configFilesRoot, domainID, "imexd.cfg.tmpl"),
+		nodesConfigPath: filepath.Join(m.configFilesRoot, domainID, "nodes.cfg"),
+	}, nil
 }
 
 func (m *ComputeDomainManager) GetComputeDomainChannelContainerEdits(devRoot string, info *common.NVcapDeviceInfo) *cdiapi.ContainerEdits {
