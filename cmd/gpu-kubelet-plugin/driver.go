@@ -130,6 +130,24 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		useSplitResourceSlices: useSplitSlices,
 	}
 
+	// Register NVML events before kubeletplugin.Start exposes Prepare/Unprepare.
+	// On plugin restart, previously prepared devices and their workloads can remain
+	// live and emit an XID before the kubelet service is available. NVML does not
+	// retain events that occur before registration.
+	if featuregates.Enabled(featuregates.NVMLDeviceHealthCheck) {
+		deviceHealthMonitor, err := newNvmlDeviceHealthMonitor(config, state.perGPUAllocatable, state.nvdevlib)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create NVML device health monitor: %w", err)
+		}
+		driver.deviceHealthMonitor = deviceHealthMonitor
+
+		// Events recorded after registration remain queued until Start begins
+		// waiting after the kubelet helper is available.
+		if err := deviceHealthMonitor.RegisterEvents(); err != nil {
+			return nil, fmt.Errorf("failed to register NVML device events: %w", err)
+		}
+	}
+
 	opts := []kubeletplugin.Option{
 		kubeletplugin.KubeClient(driver.client),
 		kubeletplugin.NodeName(config.flags.nodeName),
@@ -158,23 +176,6 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	}
 	driver.healthcheck = healthcheck
 
-	if featuregates.Enabled(featuregates.NVMLDeviceHealthCheck) {
-		deviceHealthMonitor, err := newNvmlDeviceHealthMonitor(config, state.perGPUAllocatable, state.nvdevlib)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create NVML device health monitor: %w", err)
-		}
-		if err := deviceHealthMonitor.Start(ctx); err != nil {
-			return nil, fmt.Errorf("failed to start device health monitor: %w", err)
-		}
-		driver.deviceHealthMonitor = deviceHealthMonitor
-
-		driver.wg.Add(1)
-		go func() {
-			defer driver.wg.Done()
-			driver.deviceHealthEvents(ctx, config.flags.nodeName)
-		}()
-	}
-
 	// Pass `nodeUnprepareResource` function to the cleanup manager.
 	if err := state.checkpointCleanupManager.Start(ctx, driver.nodeUnprepareResource); err != nil {
 		return nil, fmt.Errorf("error starting CheckpointCleanupManager: %w", err)
@@ -182,6 +183,25 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 
 	if err := driver.publishResources(ctx, config); err != nil {
 		return nil, err
+	}
+
+	if featuregates.Enabled(featuregates.NVMLDeviceHealthCheck) {
+		// RegisterEvents can queue unmonitored events before this consumer
+		// starts. Publish the initial ResourceSlices first, so subsequent health
+		// updates republish tainted resources without an initial snapshot
+		// overwriting them.
+		// TODO: NVML does not replay XIDs emitted before registration. Because
+		// health taints are not persisted, a restart can advertise a device as
+		// healthy unless the fault emits another event. Persist health state or
+		// validate recovery before clearing taints during startup.
+		driver.wg.Add(1)
+		go func() {
+			defer driver.wg.Done()
+			driver.deviceHealthEvents(ctx)
+		}()
+		if err := driver.deviceHealthMonitor.Start(ctx); err != nil {
+			return nil, fmt.Errorf("failed to start device health monitor: %w", err)
+		}
 	}
 
 	klog.V(4).Infof("Current kubelet plugin registration status: %s", helper.RegistrationStatus())
@@ -447,7 +467,7 @@ func (d *driver) nodeUnprepareResource(ctx context.Context, claimRef kubeletplug
 
 	cs := claimRef.String()
 	tunprep0 := time.Now()
-	err = d.state.Unprepare(ctx, claimRef)
+	taintRemovedRepublish, err := d.state.Unprepare(ctx, claimRef)
 	klog.V(6).Infof("t_unprep %.3f s (claim %s)", time.Since(tunprep0).Seconds(), cs)
 
 	if err != nil {
@@ -455,8 +475,12 @@ func (d *driver) nodeUnprepareResource(ctx context.Context, claimRef kubeletplug
 		return fmt.Errorf("error unpreparing devices for claim %v: %w", claimRef.String(), err)
 	}
 
-	if featuregates.Enabled(featuregates.PassthroughSupport) {
-		// Re-advertise updated resourceslice after unpreparing devices.
+	if featuregates.Enabled(featuregates.PassthroughSupport) ||
+		(featuregates.Enabled(featuregates.DynamicMIG) &&
+			featuregates.Enabled(featuregates.NVMLDeviceHealthCheck) &&
+			taintRemovedRepublish) {
+		// Re-advertise updated resourceslice after unpreparing devices
+		// or removed a Dynamic MIG XID taint.
 		if err = d.publishResources(ctx, d.state.config); err != nil {
 			drametrics.IncNodeUnprepareError(DriverName, "publish_resources")
 			return fmt.Errorf("error publishing resources: %w", err)
@@ -508,7 +532,7 @@ func (d *driver) publishResources(ctx context.Context, config *Config) error {
 
 }
 
-func (d *driver) deviceHealthEvents(ctx context.Context, nodeName string) {
+func (d *driver) deviceHealthEvents(ctx context.Context) {
 	klog.V(4).Info("Starting to watch for device health notifications")
 	for {
 		select {
@@ -525,26 +549,13 @@ func (d *driver) deviceHealthEvents(ctx context.Context, nodeName string) {
 			taint := healthEventToTaint(d.deviceHealthMonitor, event)
 			modified := false
 			for _, dev := range event.Devices {
-				klog.Warningf("Received %s health event for device %s", event.EventType, dev.UUID())
+				klog.Warningf("Received %s health event for device %s", event.EventType, dev.CanonicalName())
 				if d.state.AddDeviceTaint(dev, taint) {
 					modified = true
 				}
 			}
 			if !modified {
 				continue
-			}
-
-			var resourceSlice resourceslice.Slice
-			for _, devices := range d.state.perGPUAllocatable.allocatablesMap {
-				for _, dev := range devices {
-					d := dev.GetDevice(d.state.config)
-
-					taints := dev.Taints()
-					if len(taints) > 0 {
-						d.Taints = taints
-					}
-					resourceSlice.Devices = append(resourceSlice.Devices, d)
-				}
 			}
 
 			// NOTE: We only log an error on publish failure and do not retry.
@@ -561,12 +572,6 @@ func (d *driver) deviceHealthEvents(ctx context.Context, nodeName string) {
 			klog.V(4).Infof("Republishing ResourceSlice: %d device(s) tainted with %s=%q (effect=%s)",
 				len(event.Devices), taint.Key, taint.Value, taint.Effect)
 
-			resources := resourceslice.DriverResources{
-				Pools: map[string]resourceslice.Pool{
-					nodeName: {Slices: []resourceslice.Slice{resourceSlice}},
-				},
-			}
-
 			// NOTE: GPU_LOST and unmonitored events are already batched at the
 			// sender (all affected devices arrive in a single DeviceHealthEvent).
 			// XID events are still per-device and may cause repeated publishes.
@@ -574,8 +579,8 @@ func (d *driver) deviceHealthEvents(ctx context.Context, nodeName string) {
 			// Evaluate two strategies:
 			// 1. Channel drain: non-blocking pull of all pending events (Pro: zero latency; Con: susceptible to NVML lag).
 			// 2. Timer debounce: e.g., 50ms window (Pro: standard K8s API protection; Con: slight delay).
-			// This also needs to be handle properly in the recovery path.
-			if err := d.pluginhelper.PublishResources(ctx, resources); err != nil {
+			// This also needs to be handled properly in the recovery path.
+			if err := d.publishResources(ctx, d.state.config); err != nil {
 				klog.Errorf("Failed to publish resources after taint update: %v", err)
 			}
 		}
