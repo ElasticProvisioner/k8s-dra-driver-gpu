@@ -21,8 +21,10 @@ The DRA Driver for NVIDIA GPUs exposes three types of GPU resources, each suited
 
 A full GPU gives a container exclusive access to a single physical GPU. This is the default allocation mode and requires no additional configuration.
 
-Full GPUs support two optional sharing strategies for cases where you want to divide the GPU across multiple containers:
+Full GPUs support optional sharing for cases where you want to divide the GPU across multiple workloads:
 
+- **Consumable capacity:** independent `ResourceClaim` objects can share a multi-allocatable device while Kubernetes tracks the capacity consumed by each claim.
+  The NVIDIA driver requires its `ConsumableShares` feature gate and a `consumableShares` mode.
 - **Time-slicing:** containers take turns on the GPU using CUDA preemption. Requires the `TimeSlicingSettings` feature gate.
 - **MPS (Multi-Process Service):** containers run concurrently with configurable thread percentage and memory limits. Requires the `MPSSupport` feature gate.
 
@@ -101,7 +103,8 @@ It works in three phases:
 A request can be satisfied even when no matching partition was pre-configured —
 the driver creates one to match.
 
-MIG slices support both time-slicing and MPS sharing, using the same strategies as full GPUs. Time-slicing on MIG slices does not support interval configuration.
+MIG slices support consumable capacity, time-slicing, and MPS sharing, using the same approaches as full GPUs.
+Time-slicing on MIG slices does not support interval configuration.
 
 Target DeviceClass: `mig.nvidia.com`
 
@@ -128,10 +131,31 @@ Requires the `PassthroughSupport` feature gate (Alpha, default: false). See [Fea
 | | Full GPU | MIG slice | VFIO passthrough |
 |---|---|---|---|
 | Hardware isolation | No | Yes | Full device |
-| Sharing supported | Yes (time-slicing or MPS) | Yes (time-slicing or MPS) | No |
+| Sharing supported | Yes (consumable capacity, time-slicing, or MPS) | Yes (consumable capacity, time-slicing, or MPS) | No |
 | Supported hardware | All NVIDIA GPUs | MIG-capable data center GPUs (A100, A30, H100, and newer) | All NVIDIA GPUs |
 | Feature gate required | No (sharing gates optional) | No | `PassthroughSupport` (Alpha) |
 | Typical use case | ML training, general workloads | Multi-tenant inference, strict isolation | VM passthrough, specialized environments |
+
+### Add optional allocation features
+
+Choose a resource type first, and then add only the features that apply to that
+resource:
+
+- **Sharing across claims:** Kubernetes DRA consumable capacity lets independent claims share a full GPU or MIG device by memory capacity, without a capacity limit, or by a fixed share count.
+  Refer to [Consumable capacity](../guides/gpu-allocation/consumable-capacity.md).
+- **Sharing within a claim:** time-slicing or MPS can share supported full-GPU or MIG allocations among containers that reference the claim.
+  A device configuration uses one sharing strategy.
+- **Fabric topology:** Fabric Manager partitioning constrains a claim to one
+  complete NVSwitch partition.
+  The partitioning applies to full GPUs and VFIO devices, not MIG slices.
+  `PassthroughSupport` is required if you want to use VFIO devices.
+- **Operational features:** health checking and device metadata modify
+  supported workflows without creating another resource type.
+
+Refer to [Feature gate constraints](../reference/feature-gates.md#constraints)
+for the combinations enforced at driver startup.
+For the topology workflow, refer to
+[Fabric Manager partitioning](../guides/gpu-allocation/fabric-manager-partitioning.md).
 
 ---
 
@@ -199,4 +223,5 @@ For more details on using these with the DRA, refer to the how-to guides:
 - [View available GPU resources](../guides/gpu-allocation/view-resources.md)
 - [MIG](../guides/gpu-allocation/mig.md)
 - [Time-slicing](../guides/gpu-allocation/time-slicing.md)
+- [Fabric Manager partitioning](../guides/gpu-allocation/fabric-manager-partitioning.md)
 - [VFIO GPU passthrough](../guides/gpu-allocation/kubevirt-vfio-gpu-passthrough.md)
