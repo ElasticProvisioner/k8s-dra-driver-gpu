@@ -129,7 +129,7 @@ func (s *GpuSharing) GetTimeSlicingConfig() (*TimeSlicingConfig, error) {
 		return nil, fmt.Errorf("no sharing set to get config from")
 	}
 	if s.Strategy != TimeSlicingStrategy {
-		return nil, fmt.Errorf("strategy is not set to '%v'", TimeSlicingStrategy)
+		return nil, fmt.Errorf("GPU sharing strategy is %s, expected %s", s.Strategy, TimeSlicingStrategy)
 	}
 	if s.MpsConfig != nil {
 		return nil, fmt.Errorf("cannot use MpsConfig with the '%v' strategy", TimeSlicingStrategy)
@@ -148,7 +148,7 @@ func (s *GpuSharing) GetMpsConfig() (*MpsConfig, error) {
 		return nil, fmt.Errorf("no sharing set to get config from")
 	}
 	if s.Strategy != MpsStrategy {
-		return nil, fmt.Errorf("strategy is not set to '%v'", MpsStrategy)
+		return nil, fmt.Errorf("GPU sharing strategy is %s, expected %s", s.Strategy, MpsStrategy)
 	}
 	if s.TimeSlicingConfig != nil {
 		return nil, fmt.Errorf("cannot use TimeSlicingConfig with the '%v' strategy", MpsStrategy)
@@ -162,7 +162,7 @@ func (s *MigDeviceSharing) GetMpsConfig() (*MpsConfig, error) {
 		return nil, fmt.Errorf("no sharing set to get config from")
 	}
 	if s.Strategy != MpsStrategy {
-		return nil, fmt.Errorf("strategy is not set to '%v'", MpsStrategy)
+		return nil, fmt.Errorf("MIG device sharing strategy is %s, expected %s", s.Strategy, MpsStrategy)
 	}
 	return s.MpsConfig, nil
 }
@@ -204,7 +204,7 @@ func (m MpsPerDevicePinnedMemoryLimit) Normalize(uuids []string, defaultPinnedDe
 		}
 		megabyte, valid := (limit)(v).Megabyte()
 		if !valid {
-			return nil, fmt.Errorf("%w: value set too low: %v: %v", ErrInvalidLimit, k, v)
+			return nil, fmt.Errorf("%w: value for device %s is too low: %s", ErrInvalidLimit, k, v.String())
 		}
 		limits[id] = megabyte
 	}
@@ -221,7 +221,7 @@ func (d *limit) get(uuids []string) (map[string]string, error) {
 
 	megabyte, valid := d.Megabyte()
 	if !valid {
-		return nil, fmt.Errorf("%w: default value set too low: %v", ErrInvalidLimit, d)
+		return nil, fmt.Errorf("%w: default value is too low: %s", ErrInvalidLimit, (*resource.Quantity)(d).String())
 	}
 	for _, uuid := range uuids {
 		limits[uuid] = megabyte
@@ -265,12 +265,12 @@ func (s *uuidSet) Normalize(key string) (string, error) {
 
 	index, err := strconv.Atoi(key)
 	if err != nil {
-		return "", fmt.Errorf("%w: unable to parse key as an integer: %v", ErrInvalidDeviceSelector, key)
+		return "", fmt.Errorf("%w: unable to parse key %q as an integer: %w", ErrInvalidDeviceSelector, key, err)
 	}
 
 	if index >= 0 && index < len(s.uuids) {
 		return s.uuids[index], nil
 	}
 
-	return "", fmt.Errorf("%w: invalid device index: %v", ErrInvalidDeviceSelector, index)
+	return "", fmt.Errorf("%w: device index %d is outside the valid range [0, %d)", ErrInvalidDeviceSelector, index, len(s.uuids))
 }

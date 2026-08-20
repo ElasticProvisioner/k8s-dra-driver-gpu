@@ -290,7 +290,7 @@ func (m *DaemonSetManager) Delete(ctx context.Context, cdUID string) error {
 
 	err = m.config.clientsets.Core.AppsV1().DaemonSets(d.Namespace).Delete(ctx, d.Name, metav1.DeleteOptions{})
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("erroring deleting DaemonSet: %w", err)
+		return fmt.Errorf("error deleting DaemonSet: %w", err)
 	}
 
 	return nil
@@ -361,7 +361,7 @@ func (m *DaemonSetManager) assertRemoved(ctx context.Context, cdUID string) erro
 		return fmt.Errorf("error retrieving DaemonSet: %w", err)
 	}
 	if len(ds) != 0 {
-		return fmt.Errorf("still exists")
+		return fmt.Errorf("DaemonSet for ComputeDomain %s still exists", cdUID)
 	}
 	return nil
 }
@@ -389,7 +389,7 @@ func (m *DaemonSetManager) onAddOrUpdate(ctx context.Context, obj any) error {
 	newCD := cd.DeepCopy()
 	newCD.Status.Status = nvapi.ComputeDomainStatusReady
 	if _, err = m.config.clientsets.Nvidia.ResourceV1beta1().ComputeDomains(newCD.Namespace).UpdateStatus(ctx, newCD, metav1.UpdateOptions{}); err != nil {
-		return fmt.Errorf("error updating nodes in ComputeDomain status: %w", err)
+		return fmt.Errorf("failed to update ComputeDomain status to Ready: %w", err)
 	}
 
 	return nil

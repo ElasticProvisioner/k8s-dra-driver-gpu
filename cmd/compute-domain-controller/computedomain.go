@@ -162,7 +162,7 @@ func (m *ComputeDomainManager) Start(ctx context.Context) (rerr error) {
 	}
 
 	if err := m.resourceClaimTemplateManager.Start(ctx); err != nil {
-		return fmt.Errorf("error creating ResourceClaim manager: %w", err)
+		return fmt.Errorf("failed to start ResourceClaimTemplate manager: %w", err)
 	}
 
 	if m.nodeManager != nil {
@@ -416,7 +416,7 @@ func (m *ComputeDomainManager) onAddOrUpdateDriverManaged(ctx context.Context, c
 
 	// Change the global Status to reflect the number of ComputeDomain daemons connected.
 	if err := m.updateGlobalStatus(ctx, cd); err != nil {
-		return fmt.Errorf("error updating global status on ComputeDoimain '%s/%s': %w", cd.Namespace, cd.Name, err)
+		return fmt.Errorf("error updating global status on ComputeDomain '%s/%s': %w", cd.Namespace, cd.Name, err)
 	}
 
 	return nil

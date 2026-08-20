@@ -458,7 +458,7 @@ func (l deviceLib) obliterateStaleMIGDevices(expectedDeviceNames []DeviceName) e
 		// If no MIG device was found on this GPU, MIG mode might still be
 		// enabled. Disable it in this case.
 		if err := l.maybeDisableMigMode(ginfo.UUID, d); err != nil {
-			return fmt.Errorf("maybeDisableMigMode failed for GPU %s: %w", ginfo.UUID, err)
+			return fmt.Errorf("failed to disable MIG mode for %s (maybeDisableMigMode): %w", ginfo.UUID, err)
 		}
 		return nil
 	})
@@ -574,7 +574,7 @@ func (l deviceLib) getGpuInfo(index int, device nvdev.Device) (*GpuInfo, error) 
 			continue
 		}
 		if ret != nvml.SUCCESS {
-			return nil, fmt.Errorf("error retrieving GpuInstanceProfileInfo for profile %d on GPU %v", i, uuid)
+			return nil, fmt.Errorf("error retrieving GpuInstanceProfileInfo for profile %d on GPU %v: %w", i, uuid, ret)
 		}
 
 		giPossiblePlacements, ret := device.GetGpuInstancePossiblePlacements(&giProfileInfo)
@@ -585,7 +585,7 @@ func (l deviceLib) getGpuInfo(index int, device nvdev.Device) (*GpuInfo, error) 
 			continue
 		}
 		if ret != nvml.SUCCESS {
-			return nil, fmt.Errorf("error retrieving GpuInstancePossiblePlacements for profile %d on GPU %v", i, uuid)
+			return nil, fmt.Errorf("error retrieving GpuInstancePossiblePlacements for profile %d on GPU %v: %w", i, uuid, ret)
 		}
 
 		var migDevicePlacements []*MigDevicePlacement
@@ -600,7 +600,7 @@ func (l deviceLib) getGpuInfo(index int, device nvdev.Device) (*GpuInfo, error) 
 			for k := 0; k < nvml.COMPUTE_INSTANCE_ENGINE_PROFILE_COUNT; k++ {
 				migProfile, err := l.NewMigProfile(i, j, k, giProfileInfo.MemorySizeMB, memory.Total)
 				if err != nil {
-					return nil, fmt.Errorf("error building MIG profile from GpuInstanceProfileInfo for profile %d on GPU %v", i, uuid)
+					return nil, fmt.Errorf("error building MIG profile from GpuInstanceProfileInfo for profile %d on GPU %v: %w", i, uuid, err)
 				}
 
 				if migProfile.GetInfo().G != migProfile.GetInfo().C {
@@ -1121,7 +1121,7 @@ func (l deviceLib) deleteMigDevice(miglt *MigLiveTuple) error {
 
 	// UNINITIALIZED, INVALID_ARGUMENT, NO_PERMISSION
 	if gires != nvml.SUCCESS && gires != nvml.ERROR_NOT_FOUND {
-		return fmt.Errorf("error getting GPU instance handle for MIG device: %w", ret)
+		return fmt.Errorf("error getting GPU instance handle for MIG device: %w", gires)
 	}
 
 	if gires == nvml.ERROR_NOT_FOUND {
@@ -1129,7 +1129,7 @@ func (l deviceLib) deleteMigDevice(miglt *MigLiveTuple) error {
 		// hierarchy) and proceed with attempt-to-disable-MIG-mode
 		klog.Infof("Delete %s: GI was not found skip CI cleanup", migStr)
 		if err := l.maybeDisableMigMode(parentUUID, parentNvmlDev); err != nil {
-			return fmt.Errorf("failed maybeDisableMigMode: %w", err)
+			return fmt.Errorf("failed to disable MIG mode for %s (maybeDisableMigMode): %w", parentUUID, err)
 		}
 		return nil
 	}
@@ -1156,7 +1156,7 @@ func (l deviceLib) deleteMigDevice(miglt *MigLiveTuple) error {
 	// INVALID_ARGUMENT, NO_PERMISSION: for those three, it's worth erroring out
 	// here (to be retried later).
 	if cires != nvml.SUCCESS && cires != nvml.ERROR_NOT_FOUND {
-		return fmt.Errorf("error getting Compute instance handle for MIG device %s: %w", migStr, ret)
+		return fmt.Errorf("error getting Compute instance handle for MIG device %s: %w", migStr, cires)
 	}
 
 	// A previous, partial cleanup may actually have already deleted that. Seen
@@ -1185,7 +1185,7 @@ func (l deviceLib) deleteMigDevice(miglt *MigLiveTuple) error {
 	klog.V(6).Infof("t_delete_mig_device %.3f s", time.Since(t0).Seconds())
 
 	if err := l.maybeDisableMigMode(parentUUID, parentNvmlDev); err != nil {
-		return fmt.Errorf("failed maybeDisableMigMode: %w", err)
+		return fmt.Errorf("failed to disable MIG mode for %s (maybeDisableMigMode): %w", parentUUID, err)
 	}
 
 	return nil
@@ -1323,7 +1323,7 @@ func (l deviceLib) FindMigDevBySpec(ms *MigSpecTuple) (*MigLiveTuple, error) {
 	parentUUID := l.gpuUUIDbyPCIBusID[ms.ParentPCIBusID]
 	parent, ret := l.DeviceGetHandleByUUID(parentUUID)
 	if ret != nvml.SUCCESS {
-		return nil, fmt.Errorf("could not get device handle by UUID for %s", parentUUID)
+		return nil, fmt.Errorf("error getting device handle by UUID for %s: %w", parentUUID, ret)
 	}
 
 	count, _ := parent.GetMaxMigDeviceCount()

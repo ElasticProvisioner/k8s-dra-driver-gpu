@@ -41,7 +41,7 @@ func ValidateDomainID(domainID string) error {
 	// DomainID is also a node label value so this rejects over-long or invalid names that
 	// pass the path check but would fail later at MkdirAll or the label update.
 	if errs := validation.IsValidLabelValue(domainID); len(errs) != 0 {
-		return fmt.Errorf("domainID must be a valid label value: %s", strings.Join(errs, "; "))
+		return fmt.Errorf("domainID %q must be a valid label value: %s", domainID, strings.Join(errs, "; "))
 	}
 	return nil
 }

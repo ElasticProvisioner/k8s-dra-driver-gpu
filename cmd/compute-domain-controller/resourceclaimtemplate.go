@@ -211,7 +211,7 @@ func (m *BaseResourceClaimTemplateManager) Delete(ctx context.Context, cdUID str
 
 	err = m.config.clientsets.Resource.ResourceClaimTemplates(rct.Namespace).Delete(ctx, rct.Name, metav1.DeleteOptions{})
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("erroring deleting ResourceClaimTemplate: %w", err)
+		return fmt.Errorf("error deleting ResourceClaimTemplate: %w", err)
 	}
 
 	return nil
@@ -262,7 +262,7 @@ func (m *BaseResourceClaimTemplateManager) AssertRemoved(ctx context.Context, cd
 		return fmt.Errorf("error retrieving ResourceClaimTemplate: %w", err)
 	}
 	if len(rcts) != 0 {
-		return fmt.Errorf("still exists")
+		return fmt.Errorf("ResourceClaimTemplate for ComputeDomain %s still exists", cdUID)
 	}
 	return nil
 }

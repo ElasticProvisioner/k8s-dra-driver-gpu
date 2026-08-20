@@ -114,7 +114,7 @@ func (m *CleanupManager[T]) cleanup(ctx context.Context) {
 
 		computeDomain, err := m.getComputeDomain(uid)
 		if err != nil {
-			klog.Errorf("error getting ComputeDomain: %v", err)
+			klog.Errorf("error getting ComputeDomain %s: %v", uid, err)
 			continue
 		}
 
@@ -124,7 +124,7 @@ func (m *CleanupManager[T]) cleanup(ctx context.Context) {
 
 		klog.V(1).Infof("Cleanup: stale %T found for ComputeDomain '%s', running callback", *new(T), uid)
 		if err := m.callback(ctx, uid); err != nil {
-			klog.Errorf("error running CleanupManager callback: %v", err)
+			klog.Errorf("error running CleanupManager callback for ComputeDomain %s: %v", uid, err)
 			continue
 		}
 	}

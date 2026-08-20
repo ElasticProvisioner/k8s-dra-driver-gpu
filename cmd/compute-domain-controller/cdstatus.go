@@ -231,7 +231,7 @@ func (m *ComputeDomainStatusManager) syncCD(ctx context.Context, cd *nvapi.Compu
 	newCD := cd.DeepCopy()
 	newCD.Status.Nodes = newNodes
 	if _, err := m.updateComputeDomainStatus(ctx, newCD); err != nil {
-		klog.Errorf("CDStatusSync: error updating ComputeDomain %s status: %v", cd.Name, err)
+		klog.Errorf("CDStatusSync: error updating ComputeDomain %s/%s status: %v", cd.Namespace, cd.Name, err)
 		return
 	}
 

@@ -145,7 +145,7 @@ func (cdi *CDIHandler) CreateStandardDeviceSpecFile(allocatable AllocatableDevic
 	// (Eg: All gpus prepared in passthrough-mode)
 	// We use the INIT_FLAG_NO_GPUS flag to avoid failing if there are no GPUs.
 	if r := cdi.nvml.InitWithFlags(nvml.INIT_FLAG_NO_GPUS); r != nvml.SUCCESS {
-		return fmt.Errorf("failed to initialize NVML: %v", r)
+		return fmt.Errorf("failed to initialize NVML: %w", r)
 	}
 	defer func() {
 		if r := cdi.nvml.Shutdown(); r != nvml.SUCCESS {
@@ -169,7 +169,7 @@ func (cdi *CDIHandler) CreateStandardDeviceSpecFile(allocatable AllocatableDevic
 	// Generate device specs for all devices.
 	deviceSpecs, err := cdi.nvcdiDevice.GetDeviceSpecsByID("all")
 	if err != nil {
-		return fmt.Errorf("unable to get all GPU device specs: %w", err)
+		return fmt.Errorf("failed to get all GPU device specs: %w", err)
 	}
 
 	// Generate base spec from commonEdits and deviceEdits.
