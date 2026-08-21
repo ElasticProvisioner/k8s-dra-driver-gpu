@@ -78,7 +78,7 @@ func RunPrometheusMetricsServer(ctx context.Context, endpoint, metricsPath strin
 		klog.InfoS("Starting metrics HTTP server", "endpoint", endpoint, "path", actualPath)
 		err := server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			klog.ErrorS(err, "metrics HTTP server failed")
+			klog.ErrorS(err, "metrics HTTP server failed", "endpoint", endpoint, "path", actualPath)
 			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
 	}()

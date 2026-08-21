@@ -812,7 +812,7 @@ func (l deviceLib) getMigDevices(gpuInfo *GpuInfo) (map[string]*MigDeviceInfo, e
 			ciProfileInfo = &cipInfo
 		}
 		if migProfile == nil {
-			return fmt.Errorf("error getting profile info for MIG device: %v", uuid)
+			return fmt.Errorf("failed to match MIG profile for device %s (GI profile ID %d, CI profile ID %d)", uuid, giInfo.ProfileId, ciInfo.ProfileId)
 		}
 
 		placement := MigDevicePlacement{
@@ -1121,7 +1121,7 @@ func (l deviceLib) deleteMigDevice(miglt *MigLiveTuple) error {
 
 	// UNINITIALIZED, INVALID_ARGUMENT, NO_PERMISSION
 	if gires != nvml.SUCCESS && gires != nvml.ERROR_NOT_FOUND {
-		return fmt.Errorf("error getting GPU instance handle for MIG device: %w", gires)
+		return fmt.Errorf("error getting GPU instance handle for MIG device %s: %w", migStr, gires)
 	}
 
 	if gires == nvml.ERROR_NOT_FOUND {
@@ -1465,7 +1465,7 @@ func (l deviceLib) enableGPUPersistenceMode(pciAddress string) error {
 
 	device, ret := l.nvmllib.DeviceGetHandleByPciBusId(pciAddress)
 	if ret != nvml.SUCCESS {
-		return fmt.Errorf("error getting device handle by UUID: %w", ret)
+		return fmt.Errorf("error getting device handle by PCI bus ID %s: %w", pciAddress, ret)
 	}
 
 	// Check if persistence mode is already enabled.

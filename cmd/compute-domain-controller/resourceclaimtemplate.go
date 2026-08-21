@@ -114,7 +114,7 @@ func (m *BaseResourceClaimTemplateManager) Start(ctx context.Context) (rerr erro
 	defer func() {
 		if rerr != nil {
 			if err := m.Stop(); err != nil {
-				klog.Errorf("error stopping ResourceClaimTemplate  manager: %v", err)
+				klog.Errorf("error stopping ResourceClaimTemplate manager: %v", err)
 			}
 		}
 	}()
