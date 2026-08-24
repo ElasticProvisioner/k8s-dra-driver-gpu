@@ -113,7 +113,7 @@ func NewDeviceState(ctx context.Context, config *Config) (*DeviceState, error) {
 
 	computeDomainManager, err := NewComputeDomainManager(config, nvdevlib.getCliqueID)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create computedomain manager: %v", err)
+		return nil, fmt.Errorf("failed to create ComputeDomain manager: %w", err)
 	}
 
 	if err := cdi.CreateStandardDeviceSpecFile(allocatable); err != nil {

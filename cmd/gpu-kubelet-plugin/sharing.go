@@ -383,7 +383,7 @@ func (m *MpsControlDaemon) AssertReady(ctx context.Context) error {
 				},
 			)
 			if err != nil {
-				return fmt.Errorf("error listing pods from deployment")
+				return fmt.Errorf("error listing pods from deployment: %w", err)
 			}
 
 			if len(pods.Items) != 1 {

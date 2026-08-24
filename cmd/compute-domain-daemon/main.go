@@ -267,7 +267,7 @@ func run(ctx context.Context, cancel context.CancelFunc, flags *Flags) error {
 
 	// Render and write the IMEX daemon config with the current pod IP
 	if err := writeIMEXConfig(flags.podIP); err != nil {
-		return fmt.Errorf("writeIMEXConfig failed: %w", err)
+		return fmt.Errorf("failed to write IMEX daemon config: %w", err)
 	}
 
 	// Prepare IMEX daemon process manager (not invoking the process yet).
@@ -357,7 +357,7 @@ func IMEXDaemonUpdateLoopWithIPs(ctx context.Context, controller *Controller, cl
 			return nil
 		case daemons := <-controller.GetDaemonInfoUpdateChan():
 			if err := writeDaemonsConfig(cliqueID, daemons); err != nil {
-				return fmt.Errorf("writeDaemonsConfig failed: %w", err)
+				return fmt.Errorf("failed to update IMEX daemon nodes config: %w", err)
 			}
 
 			if cliqueID == "" {
@@ -482,7 +482,7 @@ func writeIMEXConfig(podIP string) error {
 	}
 
 	if err := os.WriteFile(imexDaemonConfigPath, configFile.Bytes(), 0644); err != nil {
-		return fmt.Errorf("error writing config file %v: %w", imexDaemonConfigPath, err)
+		return fmt.Errorf("error writing config file %s: %w", imexDaemonConfigPath, err)
 	}
 
 	klog.Infof("Rendered IMEX daemon config file with: %v", configTemplateData)
@@ -517,7 +517,7 @@ func writeDaemonsConfig(cliqueID string, daemons []*nvapi.ComputeDomainDaemonInf
 	}
 
 	if err := logNodesConfig(); err != nil {
-		return fmt.Errorf("logNodesConfig failed: %w", err)
+		return fmt.Errorf("failed to read nodes config for logging: %w", err)
 	}
 	return nil
 }

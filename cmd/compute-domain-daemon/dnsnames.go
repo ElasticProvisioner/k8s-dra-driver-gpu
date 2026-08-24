@@ -82,7 +82,7 @@ func (m *DNSNameManager) UpdateDNSNameMappings(daemons []*nvapi.ComputeDomainDae
 		// Construct the DNS name from the daemon index
 		dnsName, err := m.constructDNSName(daemon)
 		if err != nil {
-			return false, fmt.Errorf("failed to allocate DNS name for IP %s: %w", daemon.IPAddress, err)
+			return false, fmt.Errorf("failed to construct DNS name for IP %s: %w", daemon.IPAddress, err)
 		}
 
 		// Assign the IP -> DNS name mapping
