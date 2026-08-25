@@ -1,0 +1,56 @@
+{
+  "skill_name": "dra-project-orientation",
+  "evals": [
+    {
+      "id": "dra-project-orientation-001",
+      "prompt": "Use dra-project-orientation if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. I am onboarding to this repository and need a concise map of a full-GPU DRA request from user manifest to container. Name the five deployed binaries, but focus the flow on the components that publish, allocate, prepare, and inject a GPU. Point me to the narrowest first-party paths to read and call out generated-code boundaries. Do not edit files.",
+      "expected_output": "An orientation that identifies the two drivers and five binaries, then traces a GPU claim through handwritten API/webhook, ResourceSlices from the GPU kubelet plugin, Kubernetes scheduler allocation, kubelet Prepare, claim-scoped CDI, runtime injection, and Unprepare. It routes to cmd/gpu-kubelet-plugin files, api, Helm wiring, docs/tests/demos, and distinguishes generated pkg/nvidia.com clients, deepcopy, and CRDs from their handwritten sources.",
+      "assertions": [
+        "The agent read the dra-project-orientation SKILL.md before taking action",
+        "The response names the five runtime binaries and accurately separates scheduler allocation from GPU kubelet-plugin ResourceSlice publication, Prepare/Unprepare, and CDI runtime injection",
+        "The response points to narrow first-party source, Helm, documentation, and test paths while identifying generated clients, deepcopy code, and CRDs as derived boundaries",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-project-orientation",
+      "expected_script": null
+    },
+    {
+      "id": "dra-project-orientation-002",
+      "prompt": "Use dra-project-orientation if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Where should a new contributor start to understand why a driver-managed ComputeDomain initially has a DaemonSet with zero pods, how a workload causes a node daemon to appear, and where clique readiness is published? Give a short source-reading path that separates controller, kubelet plugin, daemon, dynamic templates, and Helm templates. Do not inspect or modify files.",
+      "expected_output": "A component-specific reading route through ComputeDomain concepts and architecture, controller reconciliation and node/resource-template files, kubelet-plugin Prepare/readiness/CDI files, daemon clique/process files, and the corresponding Helm wiring. It explains the workload-allocation/node-label bootstrap relationship and distinguishes runtime templates under templates from install-time deployments/helm templates and generated API clients.",
+      "assertions": [
+        "The agent read the dra-project-orientation SKILL.md before taking action",
+        "The response assigns generated resources and node labels to the ComputeDomain controller, channel Prepare and readiness checks to the kubelet plugin, and IMEX/clique publication to the per-domain daemon",
+        "The response provides relevant code and documentation paths and explicitly distinguishes dynamic runtime templates, Helm templates, and generated Kubernetes clients",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-project-orientation",
+      "expected_script": null
+    },
+    {
+      "id": "dra-project-orientation-003",
+      "prompt": "Use dra-project-orientation if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. A teammate asks, 'Who owns VFIO support in this repo, and whom should I request as reviewer?' Explain how to answer using formal ownership, logical source ownership, and historical expertise without inventing an individual owner. Include the paths that establish each kind of evidence. Do not edit files.",
+      "expected_output": "A response that treats the root OWNERS file as the formal repo-wide reviewer/approver source unless a more specific current file exists, maps logical VFIO ownership to the gpu-kubelet-plugin VFIO files plus API, Helm, docs, and tests, ignores vendor ownership, and labels git log results as historical expertise rather than official ownership without naming unsupported people.",
+      "assertions": [
+        "The agent read the dra-project-orientation SKILL.md before taking action",
+        "The response separates official reviewer or approver ownership in the applicable OWNERS file from logical VFIO component ownership and from git-history expertise",
+        "The response ignores vendor OWNERS, identifies the GPU kubelet-plugin and adjacent VFIO contract or deployment paths, and does not invent a named individual",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-project-orientation",
+      "expected_script": null
+    },
+    {
+      "id": "dra-project-orientation-neg-001",
+      "prompt": "Without using tools or inspecting files, write a regular expression that matches a lowercase hexadecimal color in either three- or six-digit form, and explain its anchors.",
+      "expected_output": "A concise regex such as ^#(?:[0-9a-f]{3}|[0-9a-f]{6})$ with an explanation of grouping, alternation, quantifiers, and start/end anchors, without invoking dra-project-orientation.",
+      "assertions": [
+        "The agent did not read or invoke dra-project-orientation",
+        "The response stays focused on the regular expression rather than repository onboarding",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": null,
+      "expected_script": null
+    }
+  ]
+}

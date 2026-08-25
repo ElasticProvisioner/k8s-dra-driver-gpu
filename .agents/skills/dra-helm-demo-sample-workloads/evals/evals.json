@@ -1,0 +1,56 @@
+{
+  "skill_name": "dra-helm-demo-sample-workloads",
+  "evals": [
+    {
+      "id": "dra-helm-demo-sample-workloads-001",
+      "prompt": "Use dra-helm-demo-sample-workloads if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Give me a render-only review plan for installing the local chart into namespace dra-driver-nvidia-gpu on a Kubernetes cluster that serves resource.k8s.io/v1. A standard NVIDIA device plugin is already exposing the GPUs, and I have not authorized cluster changes. Explain the key values and safety acknowledgement, commands to render and lint, and what must be resolved before any real install.",
+      "expected_output": "A non-mutating Helm lint/template plan using the local chart, explicit namespace and v1 API capability, with a clear explanation that gpuResourcesEnabledOverride acknowledges collision risk rather than being boilerplate. It resolves installation ownership, device-plugin coexistence, driver root, prerequisites, release/context, node labels, and GPU resource ownership before offering—but not executing—a live install or server-side validation.",
+      "assertions": [
+        "The agent read the dra-helm-demo-sample-workloads SKILL.md before taking action",
+        "The response uses local Helm lint and template with the explicit namespace and resource.k8s.io/v1 capability without mutating the cluster",
+        "The response explains the gpuResourcesEnabledOverride collision acknowledgement and requires resolving installation ownership, the existing device plugin, prerequisites, context, and driver root before installation",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-helm-demo-sample-workloads",
+      "expected_script": null
+    },
+    {
+      "id": "dra-helm-demo-sample-workloads-002",
+      "prompt": "Use dra-helm-demo-sample-workloads if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Without writing files, outline a minimal resource.k8s.io/v1 smoke-test manifest in a unique namespace where two containers in one pod share one full GPU through a ResourceClaimTemplate. Include the important object references and a validation ladder that proves both containers received the same GPU rather than merely proving kubectl apply succeeded.",
+      "expected_output": "A minimal namespace, ResourceClaimTemplate using gpu.nvidia.com, and Pod whose pod-local resourceClaims handle is referenced by both containers' resources.claims. It avoids opaque time-slicing or MPS config, uses a simple nvidia-smi check, and validates components, DeviceClasses, ResourceSlices, claim allocation, scheduling/events, and same UUID output from both containers before scoped cleanup.",
+      "assertions": [
+        "The agent read the dra-helm-demo-sample-workloads SKILL.md before taking action",
+        "The response correctly connects the ResourceClaimTemplate to a pod-local resourceClaims handle and lists that same handle under both containers' resources.claims",
+        "The response avoids unnecessary sharing configuration and defines success through claim allocation plus the same GPU UUID in both containers, with namespace-scoped observation and cleanup",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-helm-demo-sample-workloads",
+      "expected_script": null
+    },
+    {
+      "id": "dra-helm-demo-sample-workloads-003",
+      "prompt": "Use dra-helm-demo-sample-workloads if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. I want a local-chart kind demo on a GPU workstation, but do not execute it. Give me the repository workflow, preflight facts to verify, how the local image reaches every node, staged allocation proof, and a scoped cleanup handoff. Call out any scripts that may build images, regenerate files, label nodes, or retain/delete the cluster.",
+      "expected_output": "A deliberate plan using the repository's build, create-cluster, and install scripts with an explicit KIND_CLUSTER_NAME; it requires script inspection, Docker/NVIDIA runtime and host GPU mounts, driver root and generated-diff awareness, verifies the local image/tag/pull policy on every node, then validates pods, DeviceClasses, ResourceSlices, claims, events, and in-container GPU visibility. It offers the exact named-cluster delete step but does not run it automatically.",
+      "assertions": [
+        "The agent read the dra-helm-demo-sample-workloads SKILL.md before taking action",
+        "The response names the build, create-cluster, and install workflow with an explicit cluster name and explains the host runtime, GPU mount, image-loading, chart, and generated-file prerequisites",
+        "The response stages validation through Kubernetes objects to container evidence and leaves cluster deletion as an explicit scoped handoff rather than automatic cleanup",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-helm-demo-sample-workloads",
+      "expected_script": null
+    },
+    {
+      "id": "dra-helm-demo-sample-workloads-neg-001",
+      "prompt": "Without using tools or inspecting files, explain why a composite database index on (tenant_id, created_at) can speed up a tenant-scoped time-range query.",
+      "expected_output": "A concise database explanation covering the index prefix, narrowing by tenant, ordered range scanning by time, and tradeoffs, without invoking dra-helm-demo-sample-workloads.",
+      "assertions": [
+        "The agent did not read or invoke dra-helm-demo-sample-workloads",
+        "The response stays focused on database indexing rather than Helm deployment or GPU demos",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": null,
+      "expected_script": null
+    }
+  ]
+}

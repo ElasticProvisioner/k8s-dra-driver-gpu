@@ -1,0 +1,56 @@
+{
+  "skill_name": "dra-proposal-and-design-review",
+  "evals": [
+    {
+      "id": "dra-proposal-and-design-review-001",
+      "prompt": "Use dra-proposal-and-design-review if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Produce a scope analysis, not a full proposal file, for adding an alpha-gated scheduler-visible ResourceSlice attribute that exposes an NVIDIA fabric partition identifier and is consumed by a new built-in DeviceClass selector. Decide whether this belongs in this driver and whether a formal proposal is required. Cover the smallest useful slice, non-goals, contracts, compatibility, rollout, and evidence still needed. Do not edit files.",
+      "expected_output": "A decision-ready scope analysis that tests existing CEL/matchAttribute capabilities and adjacent ownership layers, classifies the vendor-specific discovery/publication work as a plausible driver responsibility, requires a formal proposal because of a new gate and scheduler-facing contract, recommends additive typed publication with disabled behavior and compatibility periods, and identifies discovery, ResourceSlice, DeviceClass, Prepare, Helm, docs, tests, rollout, and open evidence.",
+      "assertions": [
+        "The agent read the dra-proposal-and-design-review SKILL.md before taking action",
+        "The response evaluates existing primitives and adjacent ownership layers, then gives a reasoned driver-ownership conclusion rather than assuming it",
+        "The response classifies the new feature gate and scheduler-visible ResourceSlice contract as proposal-requiring and defines an additive smallest slice, non-goals, compatibility, rollout, test, documentation, and open-decision work",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-proposal-and-design-review",
+      "expected_script": null
+    },
+    {
+      "id": "dra-proposal-and-design-review-002",
+      "prompt": "Use dra-proposal-and-design-review if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Review this design summary: 'Version 2 of the node checkpoint will store dynamic-MIG and VFIO prepared state. On startup the new plugin reads v2. Rollback is supported. Tests: unit and e2e.' Existing claims can remain prepared across a rolling DaemonSet upgrade. Give a readiness finding and the blocking revisions needed before maintainer review. Do not rewrite the whole proposal or edit files.",
+      "expected_output": "A needs-revision finding that exposes the missing authoritative writer/readers, v1-to-v2 conversion, checksum/corruption semantics, atomicity, idempotent recovery, mixed old/new node behavior, downgrade reader strategy, in-flight Prepare/Unprepare, hardware rollback, failure injection, observability, and concrete unit/restart/upgrade/downgrade tests. It asks for specific decisions rather than accepting the unsupported rollback claim.",
+      "assertions": [
+        "The agent read the dra-proposal-and-design-review SKILL.md before taking action",
+        "The response gives a clear needs-revision readiness finding and rejects the unsupported rollback claim pending an explicit old-reader or downgrade strategy",
+        "The response identifies checkpoint authority, conversion, checksum or corruption, atomic writes, idempotency, mixed versions, in-flight operations, hardware restoration, observability, and concrete test gaps as blocking design work",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-proposal-and-design-review",
+      "expected_script": null
+    },
+    {
+      "id": "dra-proposal-and-design-review-003",
+      "prompt": "Use dra-proposal-and-design-review if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Draft an implementation-plan outline for an accepted feature: a new optional opaque GPU config field is alpha-gated, validated by the webhook and again by kubelet Prepare, persisted in prepared state, enabled through Helm, and observable through one metric. Organize it into independently testable vertical slices and identify generated artifacts, compatibility decisions, rollback points, and acceptance evidence. Do not create a file.",
+      "expected_output": "A phased plan that starts with explicit API/defaulting/normalization/validation and gate semantics, adds decoder registration and generated artifacts, wires both webhook and kubelet consumers, versions checkpoint recovery before dependent behavior, adds metric and Helm propagation/validation, then docs and integration coverage. Each slice names user-visible outcome, source owners, tests, mixed-version and disabled behavior, rollback point, and evidence without hiding unresolved design choices.",
+      "assertions": [
+        "The agent read the dra-proposal-and-design-review SKILL.md before taking action",
+        "The response sequences handwritten API and feature-gate contracts before consumers, checkpoint format before persisted use, and generated artifacts from their owning source workflow",
+        "The response covers webhook and kubelet enforcement, Helm and metric wiring, disabled and mixed-version behavior, per-slice tests and acceptance criteria, documentation, and rollback points",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-proposal-and-design-review",
+      "expected_script": null
+    },
+    {
+      "id": "dra-proposal-and-design-review-neg-001",
+      "prompt": "Without using tools or inspecting files, explain the difference between inner, left, and full outer SQL joins using a small conceptual example.",
+      "expected_output": "A concise relational explanation of matching rows and unmatched-row preservation for inner, left, and full outer joins, without invoking dra-proposal-and-design-review.",
+      "assertions": [
+        "The agent did not read or invoke dra-proposal-and-design-review",
+        "The response stays focused on SQL joins rather than a DRA design proposal",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": null,
+      "expected_script": null
+    }
+  ]
+}

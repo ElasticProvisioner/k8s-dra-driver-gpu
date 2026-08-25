@@ -1,0 +1,56 @@
+{
+  "skill_name": "dra-release-support-docs-readiness",
+  "evals": [
+    {
+      "id": "dra-release-support-docs-readiness-001",
+      "prompt": "Use dra-release-support-docs-readiness if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Give a go/no-go readiness assessment structure for release v1.3.0 from v1.2.0 with these facts: VERSION says v1.3.0, Chart.yaml version and appVersion still say 1.2.0, site/hugo.toml mixes 1.2.0 with tag v1.3.0, a beta feature gate now defaults on, and registry digests have not been checked. Define gate statuses, blockers, exact evidence owners, and what must not be claimed. Do not edit files or check external systems.",
+      "expected_output": "A no-go or blocked assessment for inconsistent version surfaces and unresolved default-on compatibility, with external artifacts marked not verified rather than ready. It separates v-prefixed and unprefixed formats, requires gate consumers, Helm propagation, prerequisites, upgrade/downgrade, tests, docs, and support impact, assigns evidence paths/owners, and does not claim published image/chart/digest readiness.",
+      "assertions": [
+        "The agent read the dra-release-support-docs-readiness SKILL.md before taking action",
+        "The response marks inconsistent VERSION, Chart.yaml, and site variables plus the unreviewed beta default change as concrete blockers and external registry digest checks as not verified",
+        "The response distinguishes required version formats and names compatibility, gate, Helm, documentation, test, upgrade or downgrade, artifact, and support evidence without inventing publication results",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-release-support-docs-readiness",
+      "expected_script": null
+    },
+    {
+      "id": "dra-release-support-docs-readiness-002",
+      "prompt": "Use dra-release-support-docs-readiness if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Plan a documentation refresh for this mismatch: current install docs and quickstarts should use resource.k8s.io/v1 and the current repository name, while an upgrade page intentionally documents a v1beta1-to-v1 migration from an older release. Explain how to find and classify stale occurrences, update canonical and derived sources, preserve historical instructions, and validate the result. Do not edit files.",
+      "expected_output": "A deliberate stale-source workflow that inventories API versions and repository identities, classifies current versus historical/compatibility occurrences before editing, derives API or generated content from handwritten sources, updates current install/prerequisite/reference/guide/demo surfaces while preserving the version-specific upgrade section, searches again for contradictions, and validates links, Helm/rendered manifests, examples, and the documentation site as appropriate.",
+      "assertions": [
+        "The agent read the dra-release-support-docs-readiness SKILL.md before taking action",
+        "The response classifies every match before editing and preserves the intentional historical v1beta1-to-v1 upgrade path rather than applying a global replacement",
+        "The response identifies canonical versus generated sources, updates the relevant current docs and examples, repeats contradiction searches, and includes semantic manifest and documentation validation",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-release-support-docs-readiness",
+      "expected_script": null
+    },
+    {
+      "id": "dra-release-support-docs-readiness-003",
+      "prompt": "Use dra-release-support-docs-readiness if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Draft a support-readiness entry for this candidate known issue: after upgrading with prepared DynamicMIG claims, some nodes report checkpoint conversion errors and do not republish capacity. Evidence exists on Kubernetes 1.34 with one driver build; no safe workaround or fixed version is verified. State what belongs in the issue, support collection guidance, matrix labels, release impact, and what claims to avoid. Do not invent links or remediation.",
+      "expected_output": "A bounded known-issue record with affected observed configuration, symptom, impact, trigger, detection, checkpoint/claim/slice/plugin evidence, and explicit no-verified-workaround/fix status. It labels the observed combination as tested-affected rather than general support truth, marks other versions unknown, treats upgrade/checkpoint compatibility as a release blocker or risk requiring ownership, and avoids destructive checkpoint deletion or promised fixes.",
+      "assertions": [
+        "The agent read the dra-release-support-docs-readiness SKILL.md before taking action",
+        "The response records the observed version and configuration, symptoms, trigger, impact, detection signals, and precise support artifacts while stating that no safe workaround or fixed version is verified",
+        "The response does not generalize one observed combination into a broad support promise, does not invent links or fixes, and avoids destructive checkpoint or hardware remediation",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-release-support-docs-readiness",
+      "expected_script": null
+    },
+    {
+      "id": "dra-release-support-docs-readiness-neg-001",
+      "prompt": "Without using tools or inspecting files, explain the difference between optimistic and pessimistic locking in a transactional application.",
+      "expected_output": "A concise concurrency-control explanation covering conflict detection, lock acquisition, contention tradeoffs, retries, and suitable workloads, without invoking dra-release-support-docs-readiness.",
+      "assertions": [
+        "The agent did not read or invoke dra-release-support-docs-readiness",
+        "The response stays focused on transactional locking rather than NVIDIA DRA release readiness",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": null,
+      "expected_script": null
+    }
+  ]
+}
