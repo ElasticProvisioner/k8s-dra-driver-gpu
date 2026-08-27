@@ -14,20 +14,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package resourceclaimutils
 
 import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
 	resourcev1 "k8s.io/api/resource/v1"
-
-	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/resourceclaimutils"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const (
-	ComputeDomainChannelType = "channel"
-	ComputeDomainDaemonType  = "daemon"
-	UnknownDeviceType        = "unknown"
-)
-
-func ResourceClaimToString(rc *resourcev1.ResourceClaim) string {
-	return resourceclaimutils.ToString(rc)
+func TestToString(t *testing.T) {
+	resourceClaim := &resourcev1.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "a", UID: "1"},
+	}
+	require.Equal(t, "ns/a:1", ToString(resourceClaim))
 }

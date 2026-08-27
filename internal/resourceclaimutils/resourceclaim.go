@@ -14,20 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+// Package resourceclaimutils provides helpers for Kubernetes ResourceClaims.
+package resourceclaimutils
 
 import (
+	"fmt"
+
 	resourcev1 "k8s.io/api/resource/v1"
-
-	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/resourceclaimutils"
 )
 
-const (
-	ComputeDomainChannelType = "channel"
-	ComputeDomainDaemonType  = "daemon"
-	UnknownDeviceType        = "unknown"
-)
-
-func ResourceClaimToString(rc *resourcev1.ResourceClaim) string {
-	return resourceclaimutils.ToString(rc)
+// ToString returns a stable namespace/name:UID representation.
+func ToString(claim *resourcev1.ResourceClaim) string {
+	return fmt.Sprintf("%s/%s:%s", claim.Namespace, claim.Name, claim.UID)
 }

@@ -43,6 +43,7 @@ import (
 
 	configapi "sigs.k8s.io/dra-driver-nvidia-gpu/api/nvidia.com/resource/v1beta1"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/common"
+	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/lookup/root"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/bootid"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/featuregates"
 	drametrics "sigs.k8s.io/dra-driver-nvidia-gpu/pkg/metrics"
@@ -72,8 +73,8 @@ type DeviceState struct {
 }
 
 func NewDeviceState(ctx context.Context, config *Config) (*DeviceState, error) {
-	containerDriverRoot := root(config.flags.containerDriverRoot)
-	nvdevlib, err := newDeviceLib(containerDriverRoot)
+	driver := root.New(root.WithDriverRoot(config.flags.containerDriverRoot))
+	nvdevlib, err := newDeviceLib(driver)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create device library: %w", err)
 	}
@@ -93,14 +94,14 @@ func NewDeviceState(ctx context.Context, config *Config) (*DeviceState, error) {
 		return nil, fmt.Errorf("error enumerating all possible devices: %w", err)
 	}
 
-	devRoot := containerDriverRoot.getDevRoot()
+	devRoot := driver.DevRoot
 	klog.Infof("using devRoot=%v", devRoot)
 
 	hostDriverRoot := config.flags.hostDriverRoot
 	cdi, err := NewCDIHandler(
 		WithNvml(nvdevlib.nvmllib),
 		WithDeviceLib(nvdevlib),
-		WithDriverRoot(string(containerDriverRoot)),
+		WithDriverRoot(driver.Root),
 		WithDevRoot(devRoot),
 		WithTargetDriverRoot(hostDriverRoot),
 		WithNVIDIACDIHookPath(config.flags.nvidiaCDIHookPath),

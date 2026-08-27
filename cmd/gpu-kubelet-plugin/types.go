@@ -21,6 +21,8 @@ import (
 
 	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+
+	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/resourceclaimutils"
 )
 
 const (
@@ -46,7 +48,7 @@ type UUIDProvider interface {
 }
 
 func ResourceClaimToString(rc *resourcev1.ResourceClaim) string {
-	return fmt.Sprintf("%s/%s:%s", rc.Namespace, rc.Name, rc.UID)
+	return resourceclaimutils.ToString(rc)
 }
 
 func PreparedClaimToString(pc *PreparedClaim, uid string) string {
