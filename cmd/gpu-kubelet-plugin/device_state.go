@@ -46,6 +46,7 @@ import (
 
 	configapi "sigs.k8s.io/dra-driver-nvidia-gpu/api/nvidia.com/resource/v1beta1"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/common"
+	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/lookup/root"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/bootid"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/fabricmanager"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/featuregates"
@@ -93,7 +94,7 @@ type DeviceState struct {
 // FabricManagerPartitioning feature is enabled and this node has an
 // NVSwitch/NVLink fabric. It returns (nil, nil) when Fabric Manager is not
 // applicable (feature disabled, mock NVML in use, or no fabric detected).
-func newFabricManager(nvdevlib *deviceLib, containerDriverRoot root) (*fabricmanager.Manager, error) {
+func newFabricManager(nvdevlib *deviceLib, driver *root.Driver) (*fabricmanager.Manager, error) {
 	if !featuregates.Enabled(featuregates.FabricManagerPartitioning) {
 		return nil, nil
 	}
@@ -112,7 +113,7 @@ func newFabricManager(nvdevlib *deviceLib, containerDriverRoot root) (*fabricman
 		return nil, nil
 	}
 
-	libPath, err := containerDriverRoot.getFMLibraryPath()
+	libPath, err := driver.LibraryPath("libnvfm.so")
 	if err != nil {
 		return nil, fmt.Errorf("FabricManagerPartitioning enabled but fabric manager library not found: %w", err)
 	}
@@ -124,12 +125,11 @@ func newFabricManager(nvdevlib *deviceLib, containerDriverRoot root) (*fabricman
 }
 
 func NewDeviceState(ctx context.Context, config *Config) (*DeviceState, error) {
-	containerDriverRoot := root(config.flags.containerDriverRoot)
-	devRoot := containerDriverRoot.getDevRoot()
+	driver := root.New(root.WithDriverRoot(config.flags.containerDriverRoot))
+	devRoot := driver.DevRoot
 	klog.Infof("Using devRoot=%v", devRoot)
 
-	hostRoot := root(config.flags.hostRoot)
-	nvdevlib, err := newDeviceLib(containerDriverRoot, hostRoot)
+	nvdevlib, err := newDeviceLib(driver, config.flags.hostRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create device library: %w", err)
 	}
@@ -152,7 +152,7 @@ func NewDeviceState(ctx context.Context, config *Config) (*DeviceState, error) {
 	cdiOptions := []cdiOption{
 		WithNvml(nvdevlib.nvmllib),
 		WithDeviceLib(nvdevlib),
-		WithDriverRoot(string(containerDriverRoot)),
+		WithDriverRoot(driver.Root),
 		WithDevRoot(devRoot),
 		WithTargetDriverRoot(hostDriverRoot),
 		WithNVIDIACDIHookPath(config.flags.nvidiaCDIHookPath),
@@ -196,13 +196,13 @@ func NewDeviceState(ctx context.Context, config *Config) (*DeviceState, error) {
 
 	var vfioPciManager *VfioPciManager
 	if featuregates.Enabled(featuregates.PassthroughSupport) {
-		vfioPciManager, err = NewVfioPciManager(string(containerDriverRoot), string(hostDriverRoot), nvdevlib, true /* nvidiaEnabled */)
+		vfioPciManager, err = NewVfioPciManager(driver.Root, hostDriverRoot, nvdevlib, true /* nvidiaEnabled */)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create vfio pci manager: %w", err)
 		}
 	}
 
-	fmManager, err := newFabricManager(nvdevlib, containerDriverRoot)
+	fmManager, err := newFabricManager(nvdevlib, driver)
 	if err != nil {
 		return nil, err
 	}

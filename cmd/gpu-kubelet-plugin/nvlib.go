@@ -35,6 +35,7 @@ import (
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"k8s.io/dynamic-resource-allocation/deviceattribute"
 
+	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/lookup/root"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/featuregates"
 )
 
@@ -55,13 +56,13 @@ type deviceLib struct {
 	devhandleByUUID   map[string]nvml.Device
 }
 
-func newDeviceLib(driverRoot root, hostRoot root) (*deviceLib, error) {
-	driverLibraryPath, err := driverRoot.getDriverLibraryPath()
+func newDeviceLib(driver *root.Driver, hostRoot string) (*deviceLib, error) {
+	driverLibraryPath, err := driver.DriverLibraryPath()
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate driver libraries: %w", err)
 	}
 
-	nvidiaSMIPath, err := driverRoot.getNvidiaSMIPath()
+	nvidiaSMIPath, err := driver.BinaryPath("nvidia-smi")
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate nvidia-smi: %w", err)
 	}
@@ -78,15 +79,15 @@ func newDeviceLib(driverRoot root, hostRoot root) (*deviceLib, error) {
 	nvpci := nvpci.New()
 	nvpassthrough := nvpassthrough.New(
 		nvpassthrough.WithNvpciLib(nvpci),
-		nvpassthrough.WithHostRoot(string(hostRoot)),
+		nvpassthrough.WithHostRoot(hostRoot),
 	)
 
 	d := deviceLib{
 		Interface:         nvdev.New(nvmllib),
 		nvmllib:           nvmllib,
 		driverLibraryPath: driverLibraryPath,
-		devRoot:           driverRoot.getDevRoot(),
-		hostRoot:          string(hostRoot),
+		devRoot:           driver.DevRoot,
+		hostRoot:          hostRoot,
 		sysfsRoot:         sysfsRoot,
 		nvidiaSMIPath:     nvidiaSMIPath,
 		nvpci:             nvpci,

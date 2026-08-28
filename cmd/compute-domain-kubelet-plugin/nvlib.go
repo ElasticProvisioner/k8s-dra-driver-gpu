@@ -33,6 +33,7 @@ import (
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 
 	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/common"
+	"sigs.k8s.io/dra-driver-nvidia-gpu/internal/lookup/root"
 	fm "sigs.k8s.io/dra-driver-nvidia-gpu/pkg/fabricmanager"
 	"sigs.k8s.io/dra-driver-nvidia-gpu/pkg/featuregates"
 )
@@ -54,13 +55,13 @@ type deviceLib struct {
 	isSingleNodeNVLinkSystem bool
 }
 
-func newDeviceLib(driverRoot root) (*deviceLib, error) {
-	driverLibraryPath, err := driverRoot.getDriverLibraryPath()
+func newDeviceLib(driver *root.Driver) (*deviceLib, error) {
+	driverLibraryPath, err := driver.DriverLibraryPath()
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate driver libraries: %w", err)
 	}
 
-	nvidiaSMIPath, err := driverRoot.getNvidiaSMIPath()
+	nvidiaSMIPath, err := driver.BinaryPath("nvidia-smi")
 	if err != nil {
 		return nil, fmt.Errorf("failed to locate nvidia-smi: %w", err)
 	}
@@ -75,7 +76,7 @@ func newDeviceLib(driverRoot root) (*deviceLib, error) {
 		Interface:           nvdev.New(nvmllib),
 		nvmllib:             nvmllib,
 		driverLibraryPath:   driverLibraryPath,
-		devRoot:             driverRoot.getDevRoot(),
+		devRoot:             driver.DevRoot,
 		nvidiaSMIPath:       nvidiaSMIPath,
 		maxImexChannelCount: 0,
 	}
@@ -416,7 +417,8 @@ const nvidiaImexCtlBinaryName = "nvidia-imex-ctl"
 // This check requires the host's nvidia-imex daemon to be configured with
 // IMEX_CMD_UNIX_DOMAIN_PATH (see site/content/docs/prerequisites.md).
 func (l deviceLib) checkHostIMEXReady(socketPath string) error {
-	if _, err := root(l.devRoot).getNvidiaImexCtlPath(); err != nil {
+	driver := root.New(root.WithDriverRoot(l.devRoot))
+	if _, err := driver.BinaryPath(nvidiaImexCtlBinaryName); err != nil {
 		return fmt.Errorf("%s not found under driver root %q: %w (is nvidia-imex installed on this node?)",
 			nvidiaImexCtlBinaryName, l.devRoot, err)
 	}
