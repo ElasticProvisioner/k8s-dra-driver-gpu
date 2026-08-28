@@ -1,0 +1,56 @@
+{
+  "skill_name": "dra-operations-troubleshooting-observability",
+  "evals": [
+    {
+      "id": "dra-operations-troubleshooting-observability-001",
+      "prompt": "Use dra-operations-troubleshooting-observability if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Triage this production symptom without changing the cluster: GPU driver pods are Running and ResourceSlices exist, but a workload pod is Pending and its ResourceClaim has no status.allocation. The kubelet-plugin logs contain no Prepare call for that claim. Identify the first broken boundary, rank likely causes, and give the smallest read-only evidence sequence. Do not recommend a restart or reinstall.",
+      "expected_output": "A boundary-first finding that treats component startup and publication as working, localizes the first failure to scheduler allocation rather than Prepare, compares pod and claim requests, DeviceClass/CEL types, capacity, constraints, taints, node selectors, and ResourceSlice pool completeness, and uses exact objects/events before plugin logs. It avoids restart/reinstall and labels hypotheses as evidence-backed or unverified.",
+      "assertions": [
+        "The agent read the dra-operations-troubleshooting-observability SKILL.md before taking action",
+        "The response identifies scheduling/allocation as the first broken boundary because no allocation or Prepare call exists despite published ResourceSlices",
+        "The response prioritizes pod, claim, DeviceClass, selector or capacity, node-placement, pool, and event evidence and does not recommend restart, reinstall, or other mutation",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-operations-troubleshooting-observability",
+      "expected_script": null
+    },
+    {
+      "id": "dra-operations-troubleshooting-observability-002",
+      "prompt": "Use dra-operations-troubleshooting-observability if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Build a support-ready triage plan for a claim that has an allocation on node-b, then emits FailedPrepareDynamicResources. The affected plugin container restarted once, so current logs begin after the first failure. Tell me what evidence to preserve before remediation, how to correlate it, and how metrics can corroborate but not prove the root cause. Do not execute commands.",
+      "expected_output": "A plan that preserves pod/claim YAML, allocation result, events, selected-node plugin current and previous timestamped logs, startup versions/gates, checkpoint-derived state, CDI/runtime evidence, and bounded support artifacts before restarts. It correlates claim name and UID, request, pool, device, node, and time, uses Prepare/error/inflight/prepared-device metric deltas only as corroboration, redacts secrets, and proposes the next discriminating observation rather than destructive recovery.",
+      "assertions": [
+        "The agent read the dra-operations-troubleshooting-observability SKILL.md before taking action",
+        "The response preserves current and previous container logs plus allocation, event, version, feature-gate, checkpoint, and CDI evidence before remediation and redacts sensitive data",
+        "The response explicitly correlates claim UID, request, pool, device, node, container, and timestamps and treats metric deltas as corroborating signals rather than claim-level proof",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-operations-troubleshooting-observability",
+      "expected_script": null
+    },
+    {
+      "id": "dra-operations-troubleshooting-observability-003",
+      "prompt": "Use dra-operations-troubleshooting-observability if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. After a Helm upgrade, only some nodes fail existing prepared GPU claims. The DaemonSet rollout is incomplete, old and new plugin images coexist, Helm reports the revision deployed, and Prepare error counters rise only on new-image nodes. Give me an incident finding structure, the before/after evidence to collect, and the decision criteria for rollout pause, rollback, or continued diagnosis. Do not mutate the release.",
+      "expected_output": "An upgrade-focused analysis that does not equate Helm deployed with runtime health, records revisions, owners, values/manifests, image IDs, rollout state, node/version mapping, claims, checkpoints, gates, APIs, previous logs, and bounded metric deltas. It treats mixed-version skew and checkpoint/API compatibility as leading hypotheses, preserves evidence, and requires understanding persistent-state and rollback compatibility before recommending rollback.",
+      "assertions": [
+        "The agent read the dra-operations-troubleshooting-observability SKILL.md before taking action",
+        "The response captures a before-and-after release and node matrix including Helm values/manifests, image IDs, rollout state, claims, checkpoints, gates, APIs, logs, and metrics",
+        "The response recognizes that a completed Helm revision does not prove runtime compatibility and does not recommend rollback until checkpoint, API, feature-gate, and mixed-version behavior are understood",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-operations-troubleshooting-observability",
+      "expected_script": null
+    },
+    {
+      "id": "dra-operations-troubleshooting-observability-neg-001",
+      "prompt": "Without using tools or inspecting files, compare offset-based and cursor-based pagination for a public REST API.",
+      "expected_output": "A concise API-design comparison covering simplicity, consistency under inserts or deletes, performance at deep pages, stable sort keys, and cursor opacity, without invoking dra-operations-troubleshooting-observability.",
+      "assertions": [
+        "The agent did not read or invoke dra-operations-troubleshooting-observability",
+        "The response stays focused on REST pagination rather than NVIDIA DRA incident triage",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": null,
+      "expected_script": null
+    }
+  ]
+}

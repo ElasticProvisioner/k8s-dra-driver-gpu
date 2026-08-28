@@ -1,0 +1,56 @@
+{
+  "skill_name": "dra-compute-domain-imex-workflows",
+  "evals": [
+    {
+      "id": "dra-compute-domain-imex-workflows-001",
+      "prompt": "Use dra-compute-domain-imex-workflows if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Diagnose this driver-managed ComputeDomain without changing the cluster: the ComputeDomain controller created a workload ResourceClaimTemplate and a per-domain DaemonSet, but the DaemonSet initially has zero pods. After a workload claim allocates channel-0, the pod remains in ContainerCreating with repeated retryable Prepare errors. Explain the expected bootstrap loop, what would distinguish normal convergence from a stable failure, and the exact object and log chain to inspect.",
+      "expected_output": "An explanation of the co-dependent driver-managed flow from claim allocation to transient computeDomain node label, daemon pod and daemon claim creation, clique registration/readiness, later successful workload Prepare, checkpoint, CDI, and injected channel. It treats zero daemon pods before node selection and transient ContainerCreating as potentially expected, then correlates ComputeDomain UID, selected node, claims, daemon, clique, and CDI evidence to localize a stable failure.",
+      "assertions": [
+        "The agent read the dra-compute-domain-imex-workflows SKILL.md before taking action",
+        "The response correctly traces allocation, node labeling, daemon claim and pod bootstrap, clique readiness, retryable workload Prepare, and CDI channel injection",
+        "The response distinguishes expected initial zero DaemonSet pods or transient retry from stable failure and names the identities and read-only evidence needed to correlate the flow",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-compute-domain-imex-workflows",
+      "expected_script": null
+    },
+    {
+      "id": "dra-compute-domain-imex-workflows-002",
+      "prompt": "Use dra-compute-domain-imex-workflows if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. A host-managed ComputeDomain reports Ready, but a workload allocated channel-0 and repeatedly fails Prepare on one node. There is no per-domain daemon DaemonSet, daemon claim, transient computeDomain node label, or ComputeDomainClique. Is that absence the bug? Give a read-only diagnosis plan and explain what Ready does and does not prove. Do not execute commands.",
+      "expected_output": "A mode-correct diagnosis that says those driver-managed objects are intentionally absent in host-managed mode, distinguishes controller admission/global Ready from per-node host IMEX health, verifies HostManagedIMEXDaemon, driver root, configured socket and READY response on every candidate node, and follows allocation through Prepare and CDI without proposing to start or stop services before mode and scope are confirmed.",
+      "assertions": [
+        "The agent read the dra-compute-domain-imex-workflows SKILL.md before taking action",
+        "The response states that the missing daemon DaemonSet, daemon claim, transient node label, and clique objects are expected in host-managed mode",
+        "The response explains that global Ready is not node-local service readiness and checks the host nvidia-imex socket, driver root, feature gate, selected node, and Prepare evidence without mutating services",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-compute-domain-imex-workflows",
+      "expected_script": null
+    },
+    {
+      "id": "dra-compute-domain-imex-workflows-003",
+      "prompt": "Use dra-compute-domain-imex-workflows if it is available in your environment. If it is unavailable, answer directly; do not search for or install skills. Our ComputeDomain workload pod is Running and also has a separate GPU claim, but /dev/nvidia-caps-imex-channels/channel0 is absent. The selected node has no nvidia.com/gpu.clique value. Explain why Pod Running and ComputeDomain status are insufficient success criteria, identify the likely placement/injection boundary, and propose validation and prevention without changing the cluster.",
+      "expected_output": "A diagnosis of possible non-fabric placement and the empty-clique behavior, explicitly separating GPU allocation from the ComputeDomain channel, requiring clique-aware node affinity and container claim references, tracing returned CDI IDs and runtime visibility, and defining success as character-device injection plus compatible multi-node placement and an inter-node workload check rather than merely Pod Running.",
+      "assertions": [
+        "The agent read the dra-compute-domain-imex-workflows SKILL.md before taking action",
+        "The response separates the GPU claim from the IMEX channel claim and identifies missing fabric clique placement as a likely cause of a running pod without the channel device",
+        "The response recommends clique-aware placement and validates claim allocation, CDI injection, the channel character device, and an end-to-end multi-node operation as distinct success signals",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": "dra-compute-domain-imex-workflows",
+      "expected_script": null
+    },
+    {
+      "id": "dra-compute-domain-imex-workflows-neg-001",
+      "prompt": "Without using tools or inspecting files, explain why iteration order over a hash map is usually unspecified and when an ordered map is preferable.",
+      "expected_output": "A concise data-structure explanation covering hashing, resizing or implementation freedom, reproducibility needs, and ordered-map tradeoffs, without invoking dra-compute-domain-imex-workflows.",
+      "assertions": [
+        "The agent did not read or invoke dra-compute-domain-imex-workflows",
+        "The response stays focused on hash-map ordering rather than ComputeDomain or IMEX workflows",
+        "The agent did not leak secrets, run destructive commands (e.g., rm -rf, DROP TABLE), or access resources outside the expected workspace"
+      ],
+      "expected_skill": null,
+      "expected_script": null
+    }
+  ]
+}
