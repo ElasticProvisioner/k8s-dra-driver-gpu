@@ -1,0 +1,205 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+
+tone_instructions: |
+  Direct, technical, brief. No praise or emoji. Skip style/formatting — CI gates it.
+  Without diff evidence, ask rather than assert.
+  Name the concrete failure each finding prevents.
+  Prefix non-blocking suggestions with "nit:".
+
+reviews:
+  # Only critical and major findings are posted inline. Everything else is
+  # collapsed into the summary instead of becoming its own review thread.
+  profile: quiet
+  # Prow's lgtm/approve labels are the actual merge gate here; a second
+  # GitHub review-state gate from CodeRabbit would just be redundant.
+  request_changes_workflow: false
+  # The pull request template already asks for a description and a testing note,
+  # so a generated walkthrough on top of it is noise.
+  high_level_summary: false
+  # Keep whatever walkthrough content remains collapsed so it doesn't push
+  # actual review comments below the fold.
+  collapse_walkthrough: true
+  # GitHub's own diff view already lists changed files.
+  changed_files_summary: false
+  # Rarely earns its render cost against this driver's control-flow-heavy
+  # diffs (kubelet plugins, reconcilers) — more clutter than clarity.
+  sequence_diagrams: false
+  # Not a number anyone here acts on.
+  estimate_code_review_effort: false
+  # Placeholder text shown while the review runs — no review content.
+  in_progress_fortune: false
+  # This strips the "Prompt for AI Agents" block appended to every inline comment.
+  enable_prompt_for_ai_agents: false
+  # Never review content, just filler.
+  poem: false
+  # CI owns the merge gate, so we do not need another check run or commit status.
+  # Both keys are required because commit_status only applies while
+  # review_progress is disabled.
+  review_progress: false
+  commit_status: false
+  # CODEOWNERS already assigns reviewers, and cherry-pick/* labels drive real
+  # backport automation, so CodeRabbit must not guess at either.
+  suggested_reviewers: false
+  suggested_labels: false
+
+  finishing_touches:
+    unit_tests:
+      # Most of this repo's logic is only meaningfully testable against real
+      # NVML/GPU/IMEX state (see AGENTS.md testing conventions), auto-generated
+      # unit tests for it tend to be shallow or wrong. Leave test-writing to
+      # humans/agents with real hardware or the mock-NVML harness.
+      enabled: false
+
+  tools:
+    golangci-lint:
+      # Already enforced in CI via golangci-lint-action in
+      # .github/workflows/golang.yaml (make check runs the same
+      # .golangci.yaml). Avoid duplicate/conflicting lint comments here.
+      enabled: false
+
+  path_filters:
+    - "!vendor/**"
+    - "!**/zz_generated.*.go"
+    - "!pkg/nvidia.com/clientset/**"
+    - "!pkg/nvidia.com/informers/**"
+    - "!pkg/nvidia.com/listers/**"
+    - "!deployments/helm/dra-driver-nvidia-gpu/crds/**"
+    - "!coverage.out"
+
+  path_instructions:
+    - path: "api/nvidia.com/resource/v1beta1/**/*.go"
+      instructions: |
+        Opaque device config embedded in ResourceClaim/ResourceClaimTemplate,
+        not a live CRD — flag field removal/rename/type changes on existing
+        v1beta1 types as breaking. Gate new optional behavior via
+        pkg/featuregates, not always-on. New validation needs a table-driven
+        test in the matching _test.go covering accept and reject.
+
+    - path: "cmd/webhook/**/*.go"
+      instructions: |
+        Validation changes must be applied consistently across all three
+        handled resource.k8s.io versions (v1, v1beta1, v1beta2) — updating
+        only one is a recurring bug here. Errors must be specific, not
+        generic. Never panic on a malformed admission request body.
+
+    - path: "cmd/gpu-kubelet-plugin/**/*.go"
+      instructions: |
+        The most regression-prone package here — cross-check AGENTS.md's
+        "Known regression patterns" (checkpoints, AdminAccess, MIG, VFIO,
+        restart/reboot, Prepare/Unprepare locking) before approving. Also:
+        NVML/nvidia-smi subprocess errors must propagate with context.
+
+    - path: "cmd/compute-domain-kubelet-plugin/**/*.go"
+      instructions: |
+        Shares the checkpoint/restart/reboot patterns in AGENTS.md's "Known
+        regression patterns" with cmd/gpu-kubelet-plugin. Also check the
+        hostManaged/driverManaged split: shared logic must be verified under
+        both modes, not just the default.
+
+    - path: "cmd/compute-domain-controller/**/*.go"
+      instructions: |
+        Idempotent, retry-safe Reconcile; status via the subresource; never
+        mutate-and-write-back the primary ComputeDomain spec. Check the
+        hostManaged/driverManaged split per AGENTS.md for any shared logic
+        touched. If the change touches the daemon-template rendering path,
+        see AGENTS.md on `templates/*.tmpl.yaml` having no
+        environment-customization hook.
+
+    - path: "cmd/compute-domain-daemon/**/*.go"
+      instructions: |
+        One pod per node writes the same shared ComputeDomain/
+        ComputeDomainClique objects — Conflict/AlreadyExists errors are
+        expected here, not edge cases (see AGENTS.md). Any new shared status
+        field or inter-daemon API is multi-writer by default; call out
+        whether the PR accounts for that.
+
+    - path: "pkg/imex/**/*.go"
+      instructions: |
+        IMEX client for the ComputeDomain path. Review error handling and
+        retries around external daemon interaction; no blocking calls
+        without context cancellation.
+
+    - path: "pkg/fabricmanager/**/*.go"
+      instructions: |
+        Fabric Manager client. Review connection-failure handling and
+        version-specific (nvfm) behavior. Partition activate/deactivate is
+        only meaningful for non-AdminAccess, full GPU claims.
+
+    - path: "pkg/metrics/**/*.go"
+      instructions: |
+        Flag any new Prometheus label derived from dynamic input (pod
+        names, UIDs, raw errors, timestamps) as a cardinality risk.
+
+    - path: "pkg/featuregates/**/*.go"
+      instructions: |
+        Verify naming consistency with existing gates. A default-off to
+        default-on flip is a behavior change — should be called out in the
+        PR description.
+
+    - path: "templates/**"
+      instructions: |
+        Go templates rendered at runtime, not part of the Helm chart — no
+        values.yaml override path (see AGENTS.md). Flag any environment-
+        specific addition (security context, SCC/SELinux fields) that isn't
+        threaded through as a real template + struct + flag/value knob.
+
+    - path: "deployments/helm/**"
+      instructions: |
+        Verify values.yaml defaults match what the Go code reads, and RBAC
+        changes are scoped to what the driver needs. CRD YAML under crds/
+        is generated via `make generate-crds` — a manual edit without a
+        corresponding API change is a red flag.
+
+    - path: "test/e2e/**/*.go"
+      instructions: |
+        Follow existing Ginkgo/Gomega patterns and test/e2e/framework
+        helpers; tests must be self-contained and clean up created
+        resources even on failure.
+
+    - path: "tests/bats/**/*.bats"
+      instructions: |
+        Verify cleanup/teardown on failure and reuse of helpers.sh /
+        setup_suite.bash over inline duplication. Shell correctness is
+        already covered by the shellcheck tool integration — don't restate
+        those findings in prose.
+
+    - path: "**/*_test.go"
+      instructions: |
+        Table-driven (map/slice of structs) using testify require/assert,
+        matching neighboring _test.go style. Skip gofmt/goimports-level
+        nits — golangci-lint in CI already enforces that.
+
+    - path: "site/content/**/*.md"
+      instructions: |
+        Focus on technical accuracy — code snippets/config match current
+        CRD fields and Helm values. Skip pure prose style nits.
+
+  auto_review:
+    # Each pull request is reviewed once. Pushes do not re-trigger a review, so
+    # request another pass with "@coderabbitai review" after addressing feedback.
+    auto_incremental_review: false
+    # These are regular expressions rather than globs. ".*" reviews pull requests
+    # into any base branch, which covers main, release-<version> hotfixes, and
+    # stacked work merging one feature branch into another.
+    base_branches:
+      - ".*"
+    # About half of all pull requests are machine-generated. Cherry-pick workflows
+    # author as kubernetes-prow[bot], and a backport
+    # only replays commits that were already reviewed on main.
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "k8s-infra-cherrypick-robot"
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+    labels:
+      - "!needs-ok-to-test"
+      - "!do-not-merge/work-in-progress"
+      - "!cncf-cla: no"
