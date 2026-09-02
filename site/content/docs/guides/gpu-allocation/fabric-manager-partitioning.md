@@ -67,9 +67,8 @@ Before enabling the feature:
 - Meet the general driver [prerequisites](../../prerequisites.md).
 - Use a supported HGX or single-node NVL system with an NVSwitch-managed
   fabric and a supported partition topology.
-- Run NVIDIA Fabric Manager on each participating node with `FABRIC_MODE=1`,
-  `FM_CMD_UNIX_SOCKET_PATH=/run/nvidia-fabricmanager/socket`, and
-  `FABRIC_MODE_RESTART=1`.
+- Run NVIDIA Fabric Manager on each participating node with `FABRIC_MODE=1`, and
+  `FM_CMD_UNIX_SOCKET_PATH=/run/nvidia-fabricmanager/socket`.
 - Ensure the target GPUs are visible to NVML when the GPU kubelet plugin
   starts, so that the driver can resolve their `gpuModuleID` values.
 
